@@ -294,7 +294,7 @@
     const tag = (cls, k, v, vcls = '') => st.insertAdjacentHTML('beforeend', `<div class="tag ${cls}"><span class="k">${k}</span><span class="v ${vcls}">${v}</span></div>`);
     if (g.pendingAttack > 0) tag('attack', '공격 누적', `+${g.pendingAttack}`);
     if (g.declaredSuit) tag('suit-tag', '모양 변경', SUIT_SYM[g.declaredSuit], isRed(g.declaredSuit) ? 'red' : '');
-    if (g.kChain) tag('k-tag', 'K 한 장 더', SUIT_SYM[g.kChain.suit], isRed(g.kChain.suit) ? 'red' : '');
+    if (g.kChain) tag('k-tag', 'K · 같은 모양/K', SUIT_SYM[g.kChain.suit], isRed(g.kChain.suit) ? 'red' : '');
     tag('', '바닥', g.discardCount);
 
     // 차례

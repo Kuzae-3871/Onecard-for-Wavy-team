@@ -37,6 +37,20 @@ function scenario() {
   assert.strictEqual(g.play('b', [920]), null);
   assert.strictEqual(g.current.pid, 'b');
   assert(g.validate('b', [921]));
+  // K 다음 다른 모양 K → 다시 그 K 모양으로 한 번 더
+  b.hand.push({ id: 923, suit: 'H', rank: 'K' }, { id: 924, suit: 'H', rank: '6' });
+  assert.strictEqual(g.play('b', [923]), null);
+  assert.strictEqual(g.current.pid, 'b');
+  assert.deepStrictEqual(g.kChain, { suit: 'H' });
+  assert(g.validate('b', [922]));
+  assert.strictEqual(g.play('b', [924]), null);
+  assert.strictEqual(g.current.pid, 'c');
+  g.setTurn(1);
+  b.hand.push({ id: 925, suit: 'H', rank: '9' }, { id: 926, suit: 'S', rank: '9' });
+  g.discard.push({ id: 927, suit: 'S', rank: '3' });
+  g.kChain = { suit: 'S' };
+  assert(g.validate('b', [925])); // 다른 모양 일반 카드는 불가
+  assert(g.validate('b', [926, 925])); // 여러 장 불가 (K 가 아님)
   assert.strictEqual(g.play('b', [922]), null);
   assert.strictEqual(g.current.pid, 'c');
   // Q: 방향 반대, c 차례 끝 → b

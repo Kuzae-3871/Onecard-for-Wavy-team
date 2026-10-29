@@ -200,9 +200,11 @@ class Game {
 
     const top = this.top;
 
+    // K 다음: 같은 모양 한 장, 또는 다른 모양의 K (K 는 같은 숫자라 여러 장도 가능)
     if (this.kChain) {
-      if (cards.length > 1) return 'K 다음에는 한 장만 낼 수 있습니다.';
-      if (cards[0].suit !== this.kChain.suit) return `K 다음에는 같은 모양(${SUIT_NAME[this.kChain.suit]})만 낼 수 있습니다.`;
+      if (cards.every((c) => c.rank === 'K')) return null;
+      if (cards.length > 1) return 'K 다음에는 같은 모양 한 장 또는 K 만 낼 수 있습니다.';
+      if (cards[0].suit !== this.kChain.suit) return `K 다음에는 같은 모양(${SUIT_NAME[this.kChain.suit]}) 또는 K 만 낼 수 있습니다.`;
       return null;
     }
 
