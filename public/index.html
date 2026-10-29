@@ -167,11 +167,22 @@
       <ol id="rankList" class="rank-list"></ol>
       <p class="hint" id="resultHint"></p>
       <button id="againBtn" class="btn primary big">한 판 더</button>
-      <button id="toLobbyBtn" class="btn ghost">닫기</button>
+      <div class="result-choice">
+        <button id="toLobbyBtn" class="btn outline">이 방에 남기</button>
+        <button id="homeBtn" class="btn outline">메인 홈으로</button>
+      </div>
       <p class="made-by">made by <b>쿠재</b></p>
     </div>
   </div>
 
+  <div id="winnerFx" class="winner-fx hidden" aria-hidden="true">
+    <div class="confetti"></div>
+    <div class="win-box">
+      <div class="crown">👑</div>
+      <div class="win-title">Winner!</div>
+      <div class="win-name"></div>
+    </div>
+  </div>
   <div id="dangerGlow" class="danger-glow" aria-hidden="true"></div>
   <div id="impactFlash" class="impact-flash" aria-hidden="true"></div>
   <div id="turnFlash" class="turn-flash" aria-hidden="true"><span>내 차례</span></div>

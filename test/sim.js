@@ -93,6 +93,28 @@ function scenario() {
     assert(g2.over);
     assert.deepStrictEqual(g2.ranking, ['y', 'z', 'x']);
   }
+  // 포기하면 걸려 있던 공격은 무효
+  {
+    const g3 = new Game([{ pid: 'x', name: 'X' }, { pid: 'y', name: 'Y' }, { pid: 'z', name: 'Z' }], 'x');
+    g3.pendingAttack = 5;
+    g3.forfeit('x');
+    assert.strictEqual(g3.pendingAttack, 0);
+    assert.strictEqual(g3.current.pid, 'y');
+  }
+  // 사람 1 + 컴퓨터 2: 사람이 1등하면 남은 컴퓨터 판은 바로 정리
+  {
+    const g4 = new Game([{ pid: 'me', name: '나' }, { pid: 'bot-1', name: 'C1' }, { pid: 'bot-2', name: 'C2' }], 'me');
+    const isBot = (id) => id.startsWith('bot-');
+    assert(!g4.onlyBotsLeft(isBot));
+    g4.player('me').hand = [{ id: 995, suit: g4.top.suit, rank: '4' }];
+    g4.play('me', [995]);
+    assert(!g4.over && g4.onlyBotsLeft(isBot));
+    g4.endByCount();
+    assert(g4.over);
+    assert.strictEqual(g4.ranking[0], 'me');
+    assert.strictEqual(g4.ranking.length, 3);
+    assert(g4.events.some((e) => e.type === 'win' && e.pid === 'me'));
+  }
   console.log('scenario ok');
 }
 scenario();

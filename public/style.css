@@ -485,3 +485,32 @@ body:has(#game:not(.hidden)) .credit { display: none; }
 @media (max-width: 560px) { .forfeit-btn { font-size: 11px; padding: 6px 11px; } }
 .game-foot { position: relative; min-height: 32px; display: flex; align-items: center; justify-content: center; margin-top: 4px; }
 .game-foot .made-by { margin: 0; }
+
+/* ---------- 결과창 선택 ---------- */
+.result-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* ---------- 1등 Winner 연출 ---------- */
+.winner-fx {
+  position: fixed; inset: 0; z-index: 45; pointer-events: none; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 45%, rgba(211,241,112,.18), rgba(18,18,18,.82) 60%);
+  opacity: 0;
+}
+.winner-fx.show { animation: win-bg 2.6s ease-in-out both; }
+@keyframes win-bg { 0% { opacity: 0; } 10% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+.win-box { text-align: center; }
+.crown { font-size: clamp(72px, 14vw, 120px); line-height: 1; filter: drop-shadow(0 10px 30px rgba(211,241,112,.5)); }
+.winner-fx.show .crown { animation: crown-drop .9s cubic-bezier(.3,1.5,.5,1) both, crown-sway 1.6s ease-in-out .9s infinite; }
+@keyframes crown-drop { 0% { transform: translateY(-120vh) rotate(-25deg); } 70% { transform: translateY(10px) rotate(6deg); } 100% { transform: none; } }
+@keyframes crown-sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg) translateY(-4px); } }
+.win-title {
+  margin-top: 6px; font-size: clamp(56px, 12vw, 112px); font-weight: 800; letter-spacing: -0.05em; line-height: 1;
+  color: var(--lime); text-shadow: 0 0 40px rgba(211,241,112,.55), 0 8px 30px rgba(0,0,0,.6);
+}
+.winner-fx.show .win-title { animation: win-pop .7s cubic-bezier(.2,1.6,.4,1) .35s both; }
+@keyframes win-pop { 0% { transform: scale(.2); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.win-name { margin-top: 14px; font-size: clamp(18px, 3vw, 24px); font-weight: 600; color: var(--white); }
+.winner-fx.show .win-name { animation: win-pop .5s ease-out .7s both; }
+.confetti i { position: absolute; top: -20px; width: 8px; height: 14px; border-radius: 2px; opacity: .9; }
+.winner-fx.show .confetti i { animation-name: confetti; animation-timing-function: cubic-bezier(.3,.6,.6,1); animation-fill-mode: both; }
+@keyframes confetti { 0% { transform: translateY(0) rotate(0); } 100% { transform: translateY(110vh) rotate(540deg); } }

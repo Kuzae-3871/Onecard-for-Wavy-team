@@ -108,6 +108,13 @@ class Game {
     return this.players.find((p) => p.pid === pid);
   }
 
+  // 1등이 정해진 순간 한 번만 (클라이언트 Winner 연출용)
+  emitWin(pid) {
+    if (this.winEmitted || !pid) return;
+    this.winEmitted = true;
+    this.pushEvent({ type: 'win', pid });
+  }
+
   pushEvent(e) {
     e.seq = ++this.eventSeq;
     this.events.push(e);
@@ -186,6 +193,7 @@ class Game {
     this.pendingAttack = 0;
     this.kChain = null;
     this.ranking = [...this.finished, ...[...this.bankrupt].reverse(), ...this.forfeited];
+    this.emitWin(this.ranking[0]);
     const winner = this.player(this.ranking[0]);
     this.addLog(`🏆 게임 종료! 1등: ${winner.name}`);
     return true;
@@ -278,6 +286,7 @@ class Game {
       this.finished.push(p.pid);
       this.addLog(msg);
       this.addLog(`🎉 ${p.name} 님 ${this.finished.length}등!`);
+      if (this.finished.length === 1) this.emitWin(p.pid);
       if (this.checkEnd()) return null;
       // 카드 효과(J/Q)는 그대로 적용
     } else {
@@ -367,16 +376,25 @@ class Game {
     p.result = 'forfeit';
     this.forfeited.push(pid);
     this.oneCard.delete(pid);
+    // 패는 몰수해서 덱에 섞어 넣음
+    const n = p.hand.length;
     this.deck = shuffle(this.deck.concat(p.hand));
     p.hand = [];
-    this.addLog(`🏳️ ${p.name} 님 게임 포기`);
+    this.addLog(`🏳️ ${p.name} 님 게임 포기 · 카드 ${n}장 몰수`);
     if (this.checkEnd()) return null;
     if (wasTurn) {
-      // 포기한 사람에게 쌓여 있던 공격은 다음 사람에게 그대로 넘어감
+      // 포기한 사람에게 걸려 있던 공격은 무효
+      if (this.pendingAttack > 0) this.addLog(`공격 ${this.pendingAttack}장 무효`);
+      this.pendingAttack = 0;
       this.kChain = null;
       this.setTurn(this.nextIndex(this.turn));
     }
     return null;
+  }
+
+  // 사람이 한 명이라도 있던 판에서, 남은 플레이어가 모두 컴퓨터면 true
+  onlyBotsLeft(isBot) {
+    return this.players.some((p) => !isBot(p.pid)) && !this.activePlayers().some((p) => !isBot(p.pid));
   }
 
   // 남은 사람을 패가 적은 순으로 순위를 매기고 바로 종료 (사람이 모두 빠져 컴퓨터만 남았을 때)

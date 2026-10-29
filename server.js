@@ -233,8 +233,6 @@ io.on('connection', (socket) => {
     if (!g) return;
     const err = g.forfeit(pid);
     if (err) return fail(err);
-    // 사람이 모두 빠지고 컴퓨터만 남으면 그 자리에서 순위를 정해 끝냄
-    if (!g.over && !g.activePlayers().some((p) => !isBotPid(room, p.pid))) g.endByCount();
     afterAction(room);
   }));
 
@@ -286,6 +284,8 @@ io.on('connection', (socket) => {
 
 function afterAction(room) {
   const g = room.game;
+  // 사람이 모두 끝났거나(1등·파산·포기) 빠지고 컴퓨터만 남으면 나머지 판은 바로 정리
+  if (g && !g.over && g.onlyBotsLeft((id) => isBotPid(room, id))) g.endByCount();
   if (g && g.over && room.lastGameDone !== g) {
     room.lastGameDone = g;
     room.lastWinner = g.ranking[0];

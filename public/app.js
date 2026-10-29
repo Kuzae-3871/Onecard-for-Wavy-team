@@ -27,6 +27,8 @@
   let lastLogSeq = 0;
   let lastGameNo = -1;
   let resultDismissed = false;
+  let overSeenAt = null;
+  const WIN_DELAY = 2700; // Winner 연출이 끝난 뒤 결과창
   let lastTurnSeq = null;
   let lastTurnPid = null;
   let lastShuffleSeq = null;
@@ -113,12 +115,14 @@
     $('forfeitModal').classList.add('hidden');
     socket.emit('forfeit');
   };
-  $('leaveBtn').onclick = () => {
+  function goHome() {
     socket.emit('leave');
     joined = false;
     state = null;
     location.href = location.pathname;
-  };
+  }
+  $('leaveBtn').onclick = goHome;
+  $('homeBtn').onclick = goHome;
   $('turnTimeSel').onchange = (e) => socket.emit('settings', { turnTime: Number(e.target.value) });
 
   // ---------- 게임 ----------
@@ -241,12 +245,16 @@
       lastShuffleSeq = null;
       lastEventSeq = null;
       resultDismissed = false;
+      overSeenAt = null;
       selected = [];
       if (g) feed.push({ sep: true, msg: `GAME ${state.gamesPlayed}` });
     }
 
-    if (!g || (!inGame && g.over)) {
+    // 결과창에서 '이 방에 남기'를 고르면 대기실로
+    if (!g || (!inGame && g.over) || (g.over && resultDismissed)) {
       show('lobby');
+      for (const id of ['resultModal', 'forfeitModal', 'suitModal']) $(id).classList.add('hidden');
+      $('dangerGlow').classList.remove('on');
       $('lobbyCode').textContent = state.code;
       $('shareLink').value = shareUrl();
       $('memberList').innerHTML = '';
@@ -394,7 +402,11 @@
     renderTimer();
 
     // 결과
-    if (g.over && !resultDismissed) {
+    if (g.over && overSeenAt === null) {
+      overSeenAt = Date.now();
+      setTimeout(render, WIN_DELAY + 50);
+    }
+    if (g.over && !resultDismissed && Date.now() - overSeenAt >= WIN_DELAY) {
       const list = $('rankList');
       list.innerHTML = '';
       g.ranking.forEach((id) => {
@@ -407,7 +419,9 @@
         list.appendChild(li);
       });
       $('againBtn').classList.toggle('hidden', !amHost);
-      $('resultHint').textContent = amHost ? '같은 멤버로 한 판 더 하면 1등이 선입니다' : '방장이 다음 판을 시작할 수 있어요 (1등이 선)';
+      $('resultHint').textContent = amHost
+        ? '한 판 더 하면 1등이 선입니다. 이 방에 남거나 메인 홈으로 갈 수 있어요.'
+        : '이 방에 남으면 방장이 다음 판을 시작할 때 함께 참가해요 (1등이 선).';
       $('resultModal').classList.remove('hidden');
     } else {
       $('resultModal').classList.add('hidden');
@@ -631,6 +645,9 @@
           });
         });
         delay += (e.cards.length - 1) * 110 + 380;
+      } else if (e.type === 'win') {
+        const who = g.players.find((x) => x.pid === e.pid);
+        setTimeout(() => winnerFx(who ? who.name : '', e.pid === pid), delay + 150);
       } else if (e.type === 'draw') {
         const attack = e.kind === 'attack';
         const penalty = e.kind === 'penalty';
@@ -746,6 +763,53 @@
   const flick = () => noiseHit({ dur: 0.07, freq: 3800, vol: 0.18, q: 1.2 });
   const thock = () => noiseHit({ dur: 0.06, freq: 1200, type: 'lowpass', vol: 0.35 });
   const thud = (v = 1) => noiseHit({ dur: 0.1, freq: 700, type: 'lowpass', vol: 0.55 * v });
+
+  // ---------- 1등 Winner 연출 ----------
+  function winnerFx(name, isMe) {
+    const fx = $('winnerFx');
+    fx.querySelector('.win-name').textContent = isMe ? `${name} · 축하해요!` : name;
+    fx.classList.toggle('me', isMe);
+    const conf = fx.querySelector('.confetti');
+    conf.innerHTML = '';
+    for (let i = 0; i < 36; i++) {
+      const c = document.createElement('i');
+      c.style.left = `${Math.random() * 100}%`;
+      c.style.animationDelay = `${Math.random() * 0.6}s`;
+      c.style.animationDuration = `${1.4 + Math.random() * 1.2}s`;
+      c.style.background = ['#d3f170', '#ffffff', '#c7e261', '#ff5a4e', '#dcdcdc'][i % 5];
+      c.style.transform = `rotate(${Math.random() * 360}deg)`;
+      conf.appendChild(c);
+    }
+    fx.classList.remove('hidden', 'show');
+    void fx.offsetWidth;
+    fx.classList.add('show');
+    fanfare();
+    if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 160]);
+    setTimeout(() => fx.classList.add('hidden'), WIN_DELAY - 100);
+  }
+
+  function fanfare() {
+    if (!soundOn) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = audioCtx.currentTime + 0.05;
+      // 도-미-솔-도↑ 상승 화음
+      [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+        const o = audioCtx.createOscillator();
+        const gn = audioCtx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = f;
+        const t = t0 + i * 0.12;
+        const len = i === 3 ? 0.7 : 0.22;
+        gn.gain.setValueAtTime(0.0001, t);
+        gn.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+        gn.gain.exponentialRampToValueAtTime(0.0001, t + len);
+        o.connect(gn).connect(audioCtx.destination);
+        o.start(t);
+        o.stop(t + len + 0.05);
+      });
+    } catch {}
+  }
 
   // ---------- 공격 카드 연출 ----------
   const ATTACK_LEVEL = { '2': 1, A: 2, BJ: 3, CJ: 4 };
