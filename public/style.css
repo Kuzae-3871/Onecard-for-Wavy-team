@@ -565,3 +565,18 @@ body:has(#game:not(.hidden)) .credit { display: none; }
 .op-actions { display: flex; gap: 6px; margin-top: 4px; }
 .op-actions .qp-btn { flex: 1; }
 .qp-btn:disabled { opacity: .4; cursor: default; }
+
+/* ---------- 파산 / Try again 연출 ---------- */
+.winner-fx.broke { background: radial-gradient(circle at 50% 45%, rgba(255,90,78,.28), rgba(18,18,18,.88) 60%); }
+.winner-fx.broke .win-title { color: #ff5a4e; text-shadow: 0 0 40px rgba(255,90,78,.55), 0 8px 30px rgba(0,0,0,.6); }
+.winner-fx.broke .crown { filter: drop-shadow(0 10px 30px rgba(255,90,78,.5)); }
+.winner-fx.broke.show .crown { animation: skull-drop .7s cubic-bezier(.3,1.4,.5,1) both, skull-shake .5s ease-in-out .7s 3; }
+@keyframes skull-drop { 0% { transform: scale(2.4) rotate(-20deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes skull-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg) translateX(-6px); } 75% { transform: rotate(12deg) translateX(6px); } }
+.winner-fx.lose { background: radial-gradient(circle at 50% 45%, rgba(220,220,220,.12), rgba(18,18,18,.86) 60%); }
+.winner-fx.lose .win-title { color: var(--gray-1); text-shadow: 0 8px 30px rgba(0,0,0,.6); font-size: clamp(48px, 10vw, 96px); }
+.winner-fx.lose .crown { filter: none; }
+.winner-fx.lose.show .crown { animation: lose-in .6s ease-out both, lose-bob 1.4s ease-in-out .6s infinite; }
+@keyframes lose-in { 0% { transform: translateY(30px); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes lose-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px) rotate(-4deg); } }
+.winner-fx.lose .win-name, .winner-fx.broke .win-name { color: var(--gray-2); font-weight: 500; }

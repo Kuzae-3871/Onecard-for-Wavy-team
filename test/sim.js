@@ -115,6 +115,19 @@ function scenario() {
     assert.strictEqual(g4.ranking.length, 3);
     assert(g4.events.some((e) => e.type === 'win' && e.pid === 'me'));
   }
+  // J·Q 여러 장: 효과는 한 번만
+  {
+    const g5 = new Game([{ pid: 'a', name: 'A' }, { pid: 'b', name: 'B' }, { pid: 'c', name: 'C' }, { pid: 'd', name: 'D' }], 'a');
+    g5.discard.push({ id: 960, suit: 'S', rank: 'J' });
+    g5.player('a').hand.push({ id: 961, suit: 'H', rank: 'J' }, { id: 962, suit: 'D', rank: 'J' });
+    assert.strictEqual(g5.play('a', [961, 962]), null);
+    assert.strictEqual(g5.current.pid, 'c'); // b 한 명만 건너뜀
+    g5.discard.push({ id: 963, suit: 'S', rank: 'Q' });
+    g5.player('c').hand.push({ id: 964, suit: 'H', rank: 'Q' }, { id: 965, suit: 'D', rank: 'Q' });
+    assert.strictEqual(g5.play('c', [964, 965]), null);
+    assert.strictEqual(g5.direction, -1); // 2장이어도 방향은 한 번 바뀜
+    assert.strictEqual(g5.current.pid, 'b');
+  }
   console.log('scenario ok');
 }
 scenario();

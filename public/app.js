@@ -28,7 +28,8 @@
   let lastGameNo = -1;
   let resultDismissed = false;
   let overSeenAt = null;
-  const WIN_DELAY = 2700; // Winner 연출이 끝난 뒤 결과창
+  const FX_LEN = 2600; // Winner / Broke / Try again 연출 길이
+  let fxBusyUntil = 0; // 연출이 이어지는 동안 결과창을 미룸
   let lastTurnSeq = null;
   let lastTurnPid = null;
   let lastShuffleSeq = null;
@@ -544,9 +545,9 @@
     // 결과
     if (g.over && overSeenAt === null) {
       overSeenAt = Date.now();
-      setTimeout(render, WIN_DELAY + 50);
+      setTimeout(render, 450);
     }
-    if (g.over && !resultDismissed && Date.now() - overSeenAt >= WIN_DELAY) {
+    if (g.over && !resultDismissed && Date.now() - overSeenAt >= 400 && Date.now() >= fxBusyUntil) {
       const list = $('rankList');
       list.innerHTML = '';
       g.ranking.forEach((id) => {
@@ -810,8 +811,14 @@
         });
         delay += (e.cards.length - 1) * 110 + 380;
       } else if (e.type === 'win') {
-        const who = g.players.find((x) => x.pid === e.pid);
-        setTimeout(() => winnerFx(who ? who.name : '', e.pid === pid), delay + 150);
+        // 1등 본인에게만 Winner! (다른 사람은 아래 알림으로)
+        if (e.pid === pid) queueFx('win', myName, delay + 150);
+      } else if (e.type === 'bankrupt') {
+        if (e.pid === pid) queueFx('broke', myName, delay + 150);
+      } else if (e.type === 'end') {
+        // 1등이 아닌 채로 끝난 참가자에게 Try again
+        const meP = g.players.find((x) => x.pid === pid);
+        if (meP && g.ranking && g.ranking[0] !== pid) queueFx('lose', myName, delay + 150);
       } else if (e.type === 'draw') {
         const attack = e.kind === 'attack';
         const penalty = e.kind === 'penalty';
@@ -929,29 +936,71 @@
   const thock = () => noiseHit({ dur: 0.06, freq: 1200, type: 'lowpass', vol: 0.35 });
   const thud = (v = 1) => noiseHit({ dur: 0.1, freq: 700, type: 'lowpass', vol: 0.55 * v });
 
-  // ---------- 1등 Winner 연출 ----------
-  function winnerFx(name, isMe) {
+  // ---------- 큰 화면 연출: Winner! / You are Broke! / Try again ----------
+  const FX = {
+    win: { emoji: '👑', title: 'Winner!', sub: (n) => `${n} · 축하해요!`, sound: () => fanfare(), vib: [60, 40, 60, 40, 160] },
+    broke: { emoji: '💀', title: 'You are Broke!', sub: () => '패가 20장을 넘어 파산했어요', sound: () => womp(), vib: [200, 80, 300] },
+    lose: { emoji: '🥲', title: 'Try again', sub: () => '다음 판엔 1등 해봐요', sound: () => sigh(), vib: [80] },
+  };
+
+  // 연출이 겹치지 않게 차례로 보여줌 (예: 파산 → Try again)
+  function queueFx(kind, name, delay = 0) {
+    const start = Math.max(Date.now() + delay, fxBusyUntil);
+    fxBusyUntil = start + FX_LEN + 150;
+    setTimeout(() => playFx(kind, name), start - Date.now());
+    setTimeout(render, fxBusyUntil - Date.now() + 30);
+  }
+
+  function playFx(kind, name) {
+    const k = FX[kind];
     const fx = $('winnerFx');
-    fx.querySelector('.win-name').textContent = isMe ? `${name} · 축하해요!` : name;
-    fx.classList.toggle('me', isMe);
+    fx.className = `winner-fx ${kind}`;
+    fx.querySelector('.fx-emoji').textContent = k.emoji;
+    fx.querySelector('.win-title').textContent = k.title;
+    fx.querySelector('.win-name').textContent = k.sub(name);
     const conf = fx.querySelector('.confetti');
     conf.innerHTML = '';
-    for (let i = 0; i < 36; i++) {
-      const c = document.createElement('i');
-      c.style.left = `${Math.random() * 100}%`;
-      c.style.animationDelay = `${Math.random() * 0.6}s`;
-      c.style.animationDuration = `${1.4 + Math.random() * 1.2}s`;
-      c.style.background = ['#d3f170', '#ffffff', '#c7e261', '#ff5a4e', '#dcdcdc'][i % 5];
-      c.style.transform = `rotate(${Math.random() * 360}deg)`;
-      conf.appendChild(c);
+    if (kind === 'win') {
+      for (let i = 0; i < 36; i++) {
+        const c = document.createElement('i');
+        c.style.left = `${Math.random() * 100}%`;
+        c.style.animationDelay = `${Math.random() * 0.6}s`;
+        c.style.animationDuration = `${1.4 + Math.random() * 1.2}s`;
+        c.style.background = ['#d3f170', '#ffffff', '#c7e261', '#ff5a4e', '#dcdcdc'][i % 5];
+        conf.appendChild(c);
+      }
     }
-    fx.classList.remove('hidden', 'show');
     void fx.offsetWidth;
     fx.classList.add('show');
-    fanfare();
-    if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 160]);
-    setTimeout(() => fx.classList.add('hidden'), WIN_DELAY - 100);
+    k.sound();
+    if (navigator.vibrate) navigator.vibrate(k.vib);
+    setTimeout(() => fx.classList.add('hidden'), FX_LEN - 100);
   }
+
+  function tones(notes, type, vol) {
+    if (!soundOn) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = audioCtx.currentTime + 0.05;
+      notes.forEach(([f, at, len, f2]) => {
+        const o = audioCtx.createOscillator();
+        const gn = audioCtx.createGain();
+        o.type = type;
+        o.frequency.setValueAtTime(f, t0 + at);
+        if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + at + len);
+        gn.gain.setValueAtTime(0.0001, t0 + at);
+        gn.gain.exponentialRampToValueAtTime(vol, t0 + at + 0.02);
+        gn.gain.exponentialRampToValueAtTime(0.0001, t0 + at + len);
+        o.connect(gn).connect(audioCtx.destination);
+        o.start(t0 + at);
+        o.stop(t0 + at + len + 0.05);
+      });
+    } catch {}
+  }
+  // 파산: 뚜-뚜-뚜우~ 내려가는 소리
+  const womp = () => tones([[392, 0, 0.28], [370, 0.3, 0.28], [349, 0.6, 0.28], [330, 0.9, 0.9, 220]], 'sawtooth', 0.09);
+  // Try again: 짧게 내려가는 두 음
+  const sigh = () => tones([[659.25, 0, 0.3], [523.25, 0.28, 0.6]], 'sine', 0.18);
 
   function fanfare() {
     if (!soundOn) return;

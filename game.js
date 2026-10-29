@@ -177,6 +177,7 @@ class Game {
     this.deck = shuffle(this.deck.concat(p.hand));
     p.hand = [];
     this.addLog(`💥 ${p.name} 님 파산! (패 ${BANKRUPT_AT}장 이상)`);
+    this.pushEvent({ type: 'bankrupt', pid: p.pid });
     return true;
   }
 
@@ -194,6 +195,7 @@ class Game {
     this.kChain = null;
     this.ranking = [...this.finished, ...[...this.bankrupt].reverse(), ...this.forfeited];
     this.emitWin(this.ranking[0]);
+    this.pushEvent({ type: 'end' });
     const winner = this.player(this.ranking[0]);
     this.addLog(`🏆 게임 종료! 1등: ${winner.name}`);
     return true;
@@ -293,8 +295,9 @@ class Game {
       this.addLog(msg);
     }
 
-    const jumps = cards.filter((c) => c.rank === 'J').length;
-    const reverses = cards.filter((c) => c.rank === 'Q').length;
+    // J·Q 는 여러 장을 한꺼번에 내도 효과는 한 번만
+    const jumps = cards.some((c) => c.rank === 'J') ? 1 : 0;
+    const reverses = cards.some((c) => c.rank === 'Q') ? 1 : 0;
 
     if (last.rank === 'K' && !p.out) {
       this.kChain = { suit: last.suit };
@@ -302,7 +305,7 @@ class Game {
       this.turnSeq++; // 타이머 리셋
       return null;
     }
-    if (reverses % 2 === 1) {
+    if (reverses) {
       this.direction *= -1;
       this.addLog(`🔄 방향 전환 (${this.direction === 1 ? '시계방향' : '반시계방향'})`);
     }
