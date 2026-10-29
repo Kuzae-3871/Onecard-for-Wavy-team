@@ -294,9 +294,13 @@
     }
     const dp = $('discardPile');
     if (lastTopId !== g.top.id || !dp.firstChild) {
+      const fresh = lastTopId !== null;
       lastTopId = g.top.id;
       dp.innerHTML = '';
-      dp.appendChild(cardEl(g.top));
+      const el = cardEl(g.top);
+      dp.appendChild(el);
+      const lv = ATTACK_LEVEL[g.top.rank];
+      if (fresh && lv && g.pendingAttack > 0) attackSlam(el, lv, g.pendingAttack);
     }
     const st = $('statusBox');
     st.innerHTML = '';
@@ -313,6 +317,10 @@
     const mine = isMyTurn();
     banner.className = `turn-banner ${mine ? 'mine' : ''}`;
     $('game').classList.toggle('my-turn', mine);
+    // 내 차례에 공격이 들어와 있으면 화면 가장자리가 붉게 반짝임
+    const underAttack = mine && g.pendingAttack > 0;
+    $('game').classList.toggle('under-attack', underAttack);
+    $('dangerGlow').classList.toggle('on', underAttack);
     if (g.over) banner.textContent = '게임 종료';
     else if (mine) {
       const sub = g.pendingAttack > 0 ? `막거나 ${g.pendingAttack}장 받기` : g.kChain ? 'K 효과로 한 장 더' : '카드를 내거나 받으세요';
@@ -321,7 +329,7 @@
     if (mine && lastTurnSeq !== g.turnSeq) {
       selected = [];
       // 다른 사람 → 나로 넘어온 순간에만 알림 (K 로 이어서 내는 건 제외)
-      if (lastTurnPid !== pid) turnCue();
+      if (lastTurnPid !== pid) turnCue(g.pendingAttack);
     }
     lastTurnSeq = g.turnSeq;
     lastTurnPid = g.turnPid;
@@ -517,10 +525,81 @@
     setTimeout(() => { fx.remove(); pile.classList.remove('shuffling'); }, 1100);
   }
 
-  function turnCue() {
+  // ---------- 공격 카드 연출 ----------
+  const ATTACK_LEVEL = { '2': 1, A: 2, BJ: 3, CJ: 4 };
+
+  function attackSlam(cardNode, lv, total) {
+    cardNode.classList.add('slam', `lv${lv}`);
+    const table = document.querySelector('.table');
+    // 충격파 링
+    for (let i = 0; i < (lv >= 3 ? 2 : 1); i++) {
+      const ring = document.createElement('span');
+      ring.className = `shock lv${lv}`;
+      ring.style.animationDelay = `${180 + i * 120}ms`;
+      $('discardPile').appendChild(ring);
+      setTimeout(() => ring.remove(), 1200);
+    }
+    // +N 누적 숫자
+    const burst = document.createElement('span');
+    burst.className = `atk-burst lv${lv}`;
+    burst.textContent = `+${total}`;
+    $('discardPile').appendChild(burst);
+    setTimeout(() => burst.remove(), 1300);
+    // 테이블 흔들림 (조커는 화면 전체 섬광)
+    table.classList.remove('shake', 'lv1', 'lv2', 'lv3', 'lv4');
+    void table.offsetWidth;
+    table.classList.add('shake', `lv${lv}`);
+    setTimeout(() => table.classList.remove('shake', `lv${lv}`), 700);
+    if (lv >= 3) {
+      const f = $('impactFlash');
+      f.className = `impact-flash lv${lv}`;
+      void f.offsetWidth;
+      f.classList.add('show');
+    }
+    if (navigator.vibrate) navigator.vibrate(lv >= 3 ? [40, 30, 120] : 60 + lv * 20);
+    impactSound(lv);
+  }
+
+  function impactSound(lv) {
+    if (!soundOn) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx;
+      const t = ctx.currentTime + 0.17; // 카드가 바닥에 닿는 순간에 맞춤
+      // 묵직한 쿵: 주파수가 뚝 떨어지는 사인파
+      const o = ctx.createOscillator();
+      const g1 = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(150 + lv * 10, t);
+      o.frequency.exponentialRampToValueAtTime(40, t + 0.35);
+      g1.gain.setValueAtTime(0.0001, t);
+      g1.gain.exponentialRampToValueAtTime(0.35 + lv * 0.08, t + 0.01);
+      g1.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      o.connect(g1).connect(ctx.destination);
+      o.start(t);
+      o.stop(t + 0.5);
+      // 탁: 짧은 노이즈
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.12, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
+      const n = ctx.createBufferSource();
+      n.buffer = buf;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 900 + lv * 500;
+      const g2 = ctx.createGain();
+      g2.gain.value = 0.25 + lv * 0.08;
+      n.connect(lp).connect(g2).connect(ctx.destination);
+      n.start(t);
+    } catch {}
+  }
+
+  function turnCue(attack) {
     chime();
     if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
     const f = $('turnFlash');
+    f.classList.toggle('attack', attack > 0);
+    f.firstElementChild.textContent = attack > 0 ? `공격 +${attack}!` : '내 차례';
     f.classList.remove('show');
     void f.offsetWidth; // 애니메이션 재시작
     f.classList.add('show');
