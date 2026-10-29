@@ -4,6 +4,7 @@ const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const { Game } = require('./game');
+const { chooseMove } = require('./bot');
 
 const PORT = process.env.PORT || 3000;
 const MAX_PLAYERS = 6;
@@ -37,7 +38,7 @@ function roomView(room, pid) {
     hostPid: room.hostPid,
     me: pid,
     turnTime: room.turnTime,
-    members: room.members.map((m) => ({ pid: m.pid, name: m.name, connected: m.connected })),
+    members: room.members.map((m) => ({ pid: m.pid, name: m.name, connected: m.connected, isBot: !!m.isBot })),
     lastWinner: room.lastWinner ? room.members.find((m) => m.pid === room.lastWinner)?.name || null : null,
     game: room.game ? room.game.view(pid) : null,
     timeLeft: room.deadline ? Math.max(0, room.deadline - Date.now()) : null,
@@ -47,6 +48,7 @@ function roomView(room, pid) {
 
 function broadcast(room) {
   syncTimer(room);
+  scheduleBots(room);
   for (const m of room.members) {
     if (m.socketId) io.to(m.socketId).emit('state', roomView(room, m.pid));
   }
@@ -72,6 +74,47 @@ function syncTimer(room) {
       afterAction(room);
     }
   }, room.turnTime * 1000);
+}
+
+// ---------- 컴퓨터 플레이어 ----------
+const BOT_NAMES = ['COM 웨이브', 'COM 라임', 'COM 모듈', 'COM 큐브', 'COM 픽셀'];
+const humansOnline = (room) => room.members.some((m) => !m.isBot && m.connected);
+const isBotPid = (room, id) => room.members.some((m) => m.pid === id && m.isBot);
+
+function scheduleBots(room) {
+  const g = room.game;
+  if (!g || g.over || !humansOnline(room)) return;
+  // 1) 차례인 컴퓨터가 카드를 냄 (애니메이션을 볼 수 있게 약간 기다림)
+  const cur = g.current;
+  if (isBotPid(room, cur.pid) && room.botSeq !== g.turnSeq) {
+    room.botSeq = g.turnSeq;
+    clearTimeout(room.botTimer);
+    const wait = 1000 + Math.random() * 800 + (g.pendingAttack ? 400 : 0);
+    room.botTimer = setTimeout(() => {
+      if (room.game !== g || g.over || g.turnSeq !== room.botSeq) return;
+      const mv = chooseMove(g, cur.pid);
+      const err = mv.type === 'play' ? g.play(cur.pid, mv.cardIds, mv.suit) : g.draw(cur.pid);
+      if (err) g.draw(cur.pid);
+      afterAction(room);
+    }, wait);
+  }
+  // 2) 원카드: 컴퓨터는 자기 원카드를 외치고, 사람이 깜빡하면 잡아냄
+  room.ocScheduled = room.ocScheduled || new Set();
+  for (const id of [...room.ocScheduled]) if (!g.oneCard.has(id)) room.ocScheduled.delete(id);
+  for (const id of g.oneCard) {
+    if (room.ocScheduled.has(id)) continue;
+    const bots = g.players.filter((p) => !p.out && isBotPid(room, p.pid) && p.pid !== id);
+    const selfBot = isBotPid(room, id);
+    if (!selfBot && !bots.length) continue;
+    room.ocScheduled.add(id);
+    const wait = selfBot ? 700 + Math.random() * 1600 : 2200 + Math.random() * 2500;
+    setTimeout(() => {
+      if (room.game !== g || g.over || !g.oneCard.has(id)) return;
+      const caller = selfBot ? id : bots[Math.floor(Math.random() * bots.length)].pid;
+      g.callOneCard(caller);
+      afterAction(room);
+    }, wait);
+  }
 }
 
 function startGame(room) {
@@ -147,6 +190,23 @@ io.on('connection', (socket) => {
     broadcast(room);
   }));
 
+  socket.on('addBot', guard(() => {
+    if (room.hostPid !== pid) return fail('방장만 컴퓨터를 추가할 수 있습니다.');
+    if (room.game && !room.game.over) return fail('게임 중에는 추가할 수 없습니다.');
+    if (room.members.filter((m) => m.connected).length >= MAX_PLAYERS) return fail(`최대 ${MAX_PLAYERS}명까지 참가할 수 있습니다.`);
+    const used = new Set(room.members.map((m) => m.name));
+    const name = BOT_NAMES.find((n) => !used.has(n)) || `COM ${room.members.length + 1}`;
+    room.members.push({ pid: `bot-${Math.random().toString(36).slice(2, 10)}`, name, connected: true, isBot: true, socketId: null });
+    broadcast(room);
+  }));
+
+  socket.on('removeBot', guard((botPid) => {
+    if (room.hostPid !== pid) return;
+    if (room.game && !room.game.over) return fail('게임 중에는 뺄 수 없습니다.');
+    room.members = room.members.filter((m) => !(m.isBot && m.pid === botPid));
+    broadcast(room);
+  }));
+
   socket.on('settings', guard(({ turnTime } = {}) => {
     if (room.hostPid !== pid) return;
     if ([0, 15, 20, 30, 45, 60].includes(turnTime)) room.turnTime = turnTime;
@@ -200,10 +260,10 @@ io.on('connection', (socket) => {
         if (!inGame) r.members = r.members.filter((x) => x.pid !== pid);
       }
       if (r.hostPid === pid) {
-        const next = r.members.find((x) => x.connected);
+        const next = r.members.find((x) => x.connected && !x.isBot);
         r.hostPid = next ? next.pid : null;
       }
-      if (!r.members.some((x) => x.connected)) r.emptySince = Date.now();
+      if (!humansOnline(r)) r.emptySince = Date.now();
       broadcast(r);
     }
     if (explicit) {

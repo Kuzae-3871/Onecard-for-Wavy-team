@@ -456,3 +456,9 @@ body:has(#game:not(.hidden)) .credit { display: none; }
   70% { transform: translate(-2px, 1px); }
   100% { transform: none; }
 }
+
+/* ---------- 컴퓨터 플레이어 ---------- */
+.members .tag.com { display: inline-flex; align-items: center; gap: 8px; color: var(--lime); font-weight: 600; letter-spacing: .08em; }
+.members .remove { padding: 4px 10px; font-size: 12px; color: var(--muted); border-color: var(--line-2); letter-spacing: 0; }
+.members .remove:hover { color: var(--white); }
+.opp.bot .name::after { content: 'COM'; font-size: 9px; font-weight: 700; letter-spacing: .1em; color: var(--black); background: var(--gray-2); padding: 2px 5px; border-radius: 4px; }

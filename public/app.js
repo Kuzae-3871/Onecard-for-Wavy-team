@@ -43,18 +43,23 @@
     $('homeSub').textContent = `방 ${roomCode} 에 초대되었습니다`;
   }
   $('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enterBtn').click(); });
-  $('enterBtn').onclick = () => {
+  let pendingBots = 0;
+  function enter(bots) {
     const name = $('nameInput').value.trim();
     if (!name) return toast('닉네임을 입력하세요', true);
     myName = name;
     store.set('onecard_name', name);
-    if (roomCode) return join();
+    if (roomCode && !bots) return join();
+    pendingBots = bots;
     socket.emit('create', (code) => {
       roomCode = code;
       history.replaceState(null, '', `?room=${code}`);
       join();
     });
-  };
+  }
+  $('enterBtn').onclick = () => enter(0);
+  // 혼자 하기: 방을 만들고 컴퓨터 2명을 바로 추가
+  $('soloBtn').onclick = () => enter(2);
 
   function join() {
     socket.emit('join', { code: roomCode, name: myName, pid });
@@ -101,6 +106,7 @@
   $('copyBtn').onclick = copyLink;
   $('copyBtn2').onclick = copyLink;
   $('startBtn').onclick = () => socket.emit('start');
+  $('addBotBtn').onclick = () => socket.emit('addBot');
   $('leaveBtn').onclick = () => {
     socket.emit('leave');
     joined = false;
@@ -243,8 +249,19 @@
         const idx = state.members.indexOf(m) + 1;
         li.innerHTML = `<span class="no">${String(idx).padStart(2, '0')}</span><span class="nm"></span><span class="tag"></span>`;
         li.children[1].textContent = m.name + (m.pid === pid ? ' (나)' : '');
-        li.children[2].textContent = [m.pid === state.hostPid ? '방장' : '', !m.connected ? '오프라인' : ''].filter(Boolean).join(' · ');
+        li.children[2].textContent = m.isBot ? 'COM' : [m.pid === state.hostPid ? '방장' : '', !m.connected ? '오프라인' : ''].filter(Boolean).join(' · ');
         if (m.pid === state.hostPid) li.children[2].classList.add('host');
+        if (m.isBot) {
+          li.classList.add('bot');
+          li.children[2].classList.add('com');
+          if (amHost) {
+            const x = document.createElement('button');
+            x.className = 'btn small ghost remove';
+            x.textContent = '빼기';
+            x.onclick = () => socket.emit('removeBot', m.pid);
+            li.children[2].appendChild(x);
+          }
+        }
         $('memberList').appendChild(li);
       }
       $('memberCount').textContent = `${state.members.length} / 6`;
@@ -252,8 +269,13 @@
       $('turnTimeSel').disabled = !amHost;
       $('startBtn').classList.toggle('hidden', !amHost);
       const n = state.members.filter((m) => m.connected).length;
+      $('addBotBtn').classList.toggle('hidden', !amHost || n >= 6);
+      if (amHost && pendingBots > 0) {
+        for (let i = 0; i < pendingBots; i++) socket.emit('addBot');
+        pendingBots = 0;
+      }
       $('lobbyHint').textContent = amHost
-        ? (n < 2 ? '링크를 공유해 친구를 초대하세요 (2~6명)' : `${n}명 준비 완료${n > 6 ? ' · 앞의 6명만 참가' : ''}`)
+        ? (n < 2 ? '링크로 친구를 초대하거나 컴퓨터를 추가하세요 (2~6명)' : `${n}명 준비 완료${n > 6 ? ' · 앞의 6명만 참가' : ''}`)
         : '방장이 게임을 시작하기를 기다리고 있어요';
       $('startBtn').disabled = n < 2;
       return;
@@ -273,6 +295,7 @@
       const d = document.createElement('div');
       d.className = `opp ${p.pid === g.turnPid ? 'turn' : ''} ${p.out ? 'out' : ''} ${member && !member.connected ? 'offline' : ''}`;
       d.dataset.pid = p.pid;
+      if (member && member.isBot) d.classList.add('bot');
       const n = document.createElement('div');
       n.className = 'name';
       n.textContent = p.name;
