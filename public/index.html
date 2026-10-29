@@ -38,7 +38,7 @@
         <details class="rules">
           <summary>게임 규칙</summary>
           <ol class="spec">
-            <li><span>기본</span><p>바닥 카드와 <b>모양</b> 또는 <b>숫자</b>가 같으면 냄. 처음 7장</p></li>
+            <li><span>기본</span><p>바닥 카드와 <b>모양</b> 또는 <b>숫자</b>가 같으면 냄. 처음 7장 · 카드를 <b>탭하면 바로</b> 냄</p></li>
             <li><span>같은 숫자</span><p>바닥에 이미 그 숫자가 깔려 있을 때만 여러 장 동시에 (♥5 → ♠5·♦5)</p></li>
             <li><span>2</span><p>공격 +2 · 2, 같은 모양 A, 조커로 방어</p></li>
             <li><span>A</span><p>공격 +3 · A 또는 조커로만 방어</p></li>
@@ -114,7 +114,6 @@
 
     <div class="actions">
       <button id="drawBtn" class="btn outline">카드 받기</button>
-      <button id="playBtn" class="btn primary">내기</button>
       <button id="oneCardBtn" class="btn onecard">원카드!</button>
     </div>
 
@@ -133,21 +132,6 @@
       </div>
     </div>
   </section>
-
-  <!-- 7 모양 선택 -->
-  <div id="suitModal" class="modal hidden">
-    <div class="panel">
-      <p class="eyebrow"><span class="dot"></span>SEVEN</p>
-      <h3>바꿀 모양을 고르세요</h3>
-      <div class="suits">
-        <button data-suit="S" class="suit-btn">♠</button>
-        <button data-suit="H" class="suit-btn red">♥</button>
-        <button data-suit="D" class="suit-btn red">♦</button>
-        <button data-suit="C" class="suit-btn">♣</button>
-      </div>
-      <button id="suitCancel" class="btn ghost">취소</button>
-    </div>
-  </div>
 
   <!-- 결과 -->
   <div id="forfeitModal" class="modal hidden">

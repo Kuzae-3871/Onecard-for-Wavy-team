@@ -77,7 +77,8 @@
     runEvents(snap);
   });
   socket.on('errorMsg', (m) => {
-    toast(m, true);
+    if (pending) cancelPending(m); // 낙관적으로 낸 카드를 되돌림
+    else toast(m, true);
     if (!state && m.includes('존재하지 않는 방')) {
       joined = false;
       roomCode = null;
@@ -132,7 +133,6 @@
     selected = [];
   };
   $('deckPile').onclick = () => { if (isMyTurn()) $('drawBtn').click(); };
-  $('playBtn').onclick = playSelected;
   $('oneCardBtn').onclick = () => socket.emit('onecard');
   $('againBtn').onclick = () => socket.emit('start');
   $('toLobbyBtn').onclick = () => { resultDismissed = true; render(); };
@@ -143,54 +143,140 @@
     $('chatInput').value = '';
   };
 
-  let pendingPlay = null;
-  document.querySelectorAll('.suit-btn').forEach((b) => {
-    b.onclick = () => {
-      $('suitModal').classList.add('hidden');
-      if (pendingPlay) socket.emit('play', { cardIds: pendingPlay, suit: b.dataset.suit });
-      pendingPlay = null;
-      selected = [];
-    };
-  });
-  $('suitCancel').onclick = () => { $('suitModal').classList.add('hidden'); pendingPlay = null; };
-
   function isMyTurn() {
     return state?.game && !state.game.over && state.game.turnPid === pid;
   }
 
-  function playSelected() {
-    if (!isMyTurn()) return toast('내 차례가 아닙니다', true);
-    if (!selected.length) return toast('낼 카드를 선택하세요 (카드를 두 번 누르면 바로 냄)', true);
-    send(selected.slice());
+  // ---------- 카드 내기: 탭 한 번 ----------
+  // 낼 수 있는 카드는 탭하면 바로 냄. 서버 응답을 기다리지 않고 카드부터 날려 보내고(낙관적 연출),
+  // 서버가 거절하면 손패로 되돌림.
+  let pending = null; // { ids, timer }
+  let opt = null; // 낙관적 비행 상태 { flyers, done, resolved, land }
+  let pop = null;
+
+  function closePop() {
+    if (pop) { pop.remove(); pop = null; }
+  }
+  document.addEventListener('pointerdown', (e) => { if (pop && !pop.contains(e.target)) closePop(); }, true);
+
+  function whyNot() {
+    const g = state.game;
+    if (!isMyTurn()) return '내 차례가 아니에요';
+    const top = g.top;
+    if (g.kChain) return `K 다음엔 ${SUIT_SYM[g.kChain.suit]} 또는 K만 낼 수 있어요`;
+    if (g.pendingAttack > 0) {
+      if (top.rank === 'CJ') return '컬러조커는 막을 수 없어요 · 받기';
+      if (top.rank === 'BJ') return '흑백조커는 ♠A·컬러조커로만 막아요';
+      if (top.rank === 'A') return 'A 공격은 A·조커로만 막아요';
+      return `2 공격은 2·${SUIT_SYM[top.suit]}A·조커로만 막아요`;
+    }
+    if (g.declaredSuit) return `모양이 ${SUIT_SYM[g.declaredSuit]}(으)로 바뀌었어요`;
+    return '모양이나 숫자가 맞지 않아요';
   }
 
-  function send(ids) {
-    const hand = state.game.hand;
-    const last = hand.find((c) => c.id === ids[ids.length - 1]);
-    if (last && last.rank === '7') {
-      pendingPlay = ids;
-      $('suitModal').classList.remove('hidden');
-      return;
-    }
-    socket.emit('play', { cardIds: ids });
-    selected = [];
+  function tip(el, msg) {
+    const r = el.getBoundingClientRect();
+    const b = document.createElement('div');
+    b.className = 'tip';
+    b.textContent = msg;
+    b.style.left = `${Math.min(Math.max(r.left + r.width / 2, 90), innerWidth - 90)}px`;
+    b.style.top = `${r.top - 8}px`;
+    document.body.appendChild(b);
+    setTimeout(() => b.remove(), 1500);
   }
 
-  let lastTap = { id: null, t: 0 };
-  function onCardTap(c) {
-    const now = Date.now();
-    // 더블탭 → 그 카드 한 장 바로 내기
-    if (lastTap.id === c.id && now - lastTap.t < 350 && isMyTurn()) {
-      lastTap = { id: null, t: 0 };
-      selected = [];
-      send([c.id]);
-      return;
+  function nope(el, msg) {
+    el.classList.remove('nope');
+    void el.offsetWidth;
+    el.classList.add('nope');
+    tip(el, msg);
+    if (navigator.vibrate) navigator.vibrate(30);
+  }
+
+  // 카드 바로 위에 뜨는 작은 선택지 (여러 장 / 7 모양)
+  function showPop(el, items, kind) {
+    closePop();
+    const r = el.getBoundingClientRect();
+    pop = document.createElement('div');
+    pop.className = `quick-pop ${kind || ''}`;
+    for (const it of items) {
+      const b = document.createElement('button');
+      b.className = `qp-btn ${it.primary ? 'primary' : ''} ${it.red ? 'red' : ''}`;
+      b.textContent = it.label;
+      b.onclick = (e) => { e.stopPropagation(); it.act(); };
+      pop.appendChild(b);
     }
-    lastTap = { id: c.id, t: now };
-    const i = selected.indexOf(c.id);
-    if (i >= 0) selected.splice(i, 1);
-    else selected.push(c.id);
-    markSelection();
+    document.body.appendChild(pop);
+    const w = pop.offsetWidth;
+    pop.style.left = `${Math.min(Math.max(r.left + r.width / 2 - w / 2, 8), innerWidth - w - 8)}px`;
+    pop.style.top = `${Math.max(r.top - pop.offsetHeight - 10, 8)}px`;
+  }
+
+  function onCardTap(c, el) {
+    const g = state?.game;
+    if (!g || g.over || pending) return;
+    closePop();
+    if (!isMyTurn() || !g.playable.includes(c.id)) return nope(el, whyNot());
+    // 바닥과 같은 숫자를 여러 장 갖고 있으면 1장/모두 선택
+    const top = g.top;
+    const same = top.suit && c.rank === top.rank ? g.hand.filter((x) => x.rank === top.rank && g.playable.includes(x.id)) : [];
+    if (same.length > 1) {
+      const all = [...same.filter((x) => x.id !== c.id).map((x) => x.id), c.id]; // 누른 카드가 맨 위
+      return showPop(el, [
+        { label: '1장만', act: () => choose([c.id], el) },
+        { label: `${same.length}장 모두`, primary: true, act: () => choose(all, el) },
+      ]);
+    }
+    choose([c.id], el);
+  }
+
+  function choose(ids, el) {
+    const last = state.game.hand.find((x) => x.id === ids[ids.length - 1]);
+    if (last.rank === '7') {
+      return showPop(el, ['S', 'H', 'D', 'C'].map((s) => ({ label: SUIT_SYM[s], red: isRed(s), act: () => commit(ids, s) })), 'suits');
+    }
+    commit(ids);
+  }
+
+  function commit(ids, suit) {
+    closePop();
+    const g = state.game;
+    socket.emit('play', { cardIds: ids, suit });
+    const pile = rectOf($('discardPile').querySelector('.card'));
+    opt = { flyers: [], done: false, resolved: false, land: null };
+    ids.forEach((id, i) => {
+      const el = handEls.get(id);
+      const c = g.hand.find((x) => x.id === id);
+      if (!el || !c) return;
+      const from = rectOf(el);
+      el.classList.add('gone');
+      const isLast = i === ids.length - 1;
+      const f = fly({
+        face: c, from, to: pile, delay: i * 110, keep: true,
+        mode: isLast && ATTACK_LEVEL[c.rank] ? 'toSlam' : 'play',
+        onStart: () => swish(0.5),
+        onDone: isLast ? () => { if (opt) { opt.done = true; finishOpt(); } } : null,
+      });
+      if (f) opt.flyers.push(f);
+    });
+    pending = { ids, timer: setTimeout(() => cancelPending(), 4000) };
+  }
+
+  function finishOpt() {
+    if (!opt || !opt.done || !opt.resolved) return;
+    const o = opt;
+    opt = null;
+    doLand(o.land);
+    o.flyers.forEach((f) => f.remove());
+  }
+
+  function cancelPending(msg) {
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pending = null;
+    if (opt) { opt.flyers.forEach((f) => f.remove()); opt = null; }
+    renderHand();
+    if (msg) toast(msg, true);
   }
 
   // DOM 을 다시 만들지 않고 선택 표시만 갱신 (더블탭이 끊기지 않도록)
@@ -261,7 +347,8 @@
     // 결과창에서 '이 방에 남기'를 고르면 대기실로
     if (!g || (!inGame && g.over) || (g.over && resultDismissed)) {
       show('lobby');
-      for (const id of ['resultModal', 'forfeitModal', 'suitModal']) $(id).classList.add('hidden');
+      for (const id of ['resultModal', 'forfeitModal']) $(id).classList.add('hidden');
+      closePop();
       $('dangerGlow').classList.remove('on');
       $('lobbyCode').textContent = state.code;
       $('shareLink').value = shareUrl();
@@ -392,7 +479,6 @@
     updateTitle(mine);
 
     // 버튼
-    $('playBtn').disabled = !mine;
     $('drawBtn').disabled = !mine && !g.over;
     $('drawBtn').textContent = g.over ? '결과 보기' : g.pendingAttack > 0 ? `${g.pendingAttack}장 받기` : '카드 받기';
     const anyPending = g.players.some((p) => p.oneCard);
@@ -471,7 +557,12 @@
         el.className = 'card';
         el.style.marginLeft = i > 0 ? `${step - cardW}px` : '';
         if (mine) el.classList.add(g.playable.includes(c.id) ? 'playable' : 'dim');
-        el.onclick = () => onCardTap(c);
+        if (pending && pending.ids.includes(c.id)) el.classList.add('gone');
+        el.onpointerdown = (e) => { el._px = e.clientX; el._py = e.clientY; };
+        el.onclick = (e) => {
+          if (el._px != null && Math.hypot(e.clientX - el._px, e.clientY - el._py) > 12) return; // 스크롤하다 닿은 건 무시
+          onCardTap(c, el);
+        };
         row.appendChild(el);
       });
       h.appendChild(row);
@@ -648,7 +739,16 @@
 
     for (const e of evs) {
       const mine = e.pid === pid;
-      if (e.type === 'play') {
+      if (e.type === 'play' && mine && pending && e.cards.some((c) => pending.ids.includes(c.id))) {
+        clearTimeout(pending.timer);
+        pending = null;
+        if (opt) {
+          opt.resolved = true;
+          if (e === lastPlay) opt.land = land;
+          finishOpt();
+        } else if (e === lastPlay) doLand(land);
+        delay += 120;
+      } else if (e.type === 'play') {
         e.cards.forEach((c, i) => {
           const isFinal = e === lastPlay && i === e.cards.length - 1;
           const src = mine ? snap.hand.get(String(c.id)) : null;
@@ -710,8 +810,8 @@
     if (!lastPlay) doLand(land);
   }
 
-  function fly({ face, back, from, to, delay = 0, mode = 'play', onStart, onDone }) {
-    if (!from || !to) { onDone && onDone(); return; }
+  function fly({ face, back, from, to, delay = 0, mode = 'play', onStart, onDone, keep }) {
+    if (!from || !to) { onDone && onDone(); return null; }
     const el = face ? cardEl(face) : document.createElement('div');
     el.classList.add('card', 'flyer');
     if (back) el.classList.add('back');
@@ -753,7 +853,8 @@
     }
     const anim = el.animate(frames, { duration, delay, easing, fill: 'both' });
     if (onStart) setTimeout(onStart, delay);
-    anim.onfinish = () => { el.remove(); onDone && onDone(); };
+    anim.onfinish = () => { if (!keep) el.remove(); onDone && onDone(); };
+    return el;
   }
 
   // 짧은 효과음들 (음원 파일 없이 생성)
