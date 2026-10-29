@@ -541,3 +541,27 @@ body:has(#game:not(.hidden)) .credit { display: none; }
 .quick-pop.suits .qp-btn { font-size: 26px; line-height: 1; padding: 10px 14px; background: var(--white); color: var(--black); }
 .quick-pop.suits .qp-btn.red { color: #d62839; }
 .quick-pop.suits .qp-btn:hover { box-shadow: 0 0 0 3px var(--lime); }
+
+/* 여러 장 순서 정하기 */
+.quick-pop.order { flex-direction: column; gap: 10px; padding: 12px; }
+.op-hint { font-size: 12px; color: var(--muted); text-align: center; }
+.op-hint b { color: var(--lime); font-weight: 600; }
+.op-cards { display: flex; gap: 8px; justify-content: center; }
+.op-card {
+  position: relative; width: 58px; padding: 0; border: 0; background: none; cursor: pointer;
+  border-radius: 6px; transition: transform .12s;
+}
+.op-card img { width: 100%; display: block; border-radius: 6px; opacity: .55; transition: opacity .12s; }
+.op-card.on img { opacity: 1; box-shadow: 0 0 0 2px var(--white); }
+.op-card.top img { box-shadow: 0 0 0 3px var(--lime); }
+.op-card.on { transform: translateY(-4px); }
+.op-no {
+  position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%);
+  font-size: 11px; font-weight: 700; white-space: nowrap; padding: 2px 7px; border-radius: 999px;
+  background: var(--white); color: var(--black);
+}
+.op-no:empty { display: none; }
+.op-card.top .op-no { background: var(--lime); }
+.op-actions { display: flex; gap: 6px; margin-top: 4px; }
+.op-actions .qp-btn { flex: 1; }
+.qp-btn:disabled { opacity: .4; cursor: default; }

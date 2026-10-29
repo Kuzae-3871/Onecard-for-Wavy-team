@@ -220,14 +220,60 @@
     // 바닥과 같은 숫자를 여러 장 갖고 있으면 1장/모두 선택
     const top = g.top;
     const same = top.suit && c.rank === top.rank ? g.hand.filter((x) => x.rank === top.rank && g.playable.includes(x.id)) : [];
-    if (same.length > 1) {
-      const all = [...same.filter((x) => x.id !== c.id).map((x) => x.id), c.id]; // 누른 카드가 맨 위
-      return showPop(el, [
-        { label: '1장만', act: () => choose([c.id], el) },
-        { label: `${same.length}장 모두`, primary: true, act: () => choose(all, el) },
-      ]);
-    }
+    if (same.length > 1) return showOrderPop(el, same, c);
     choose([c.id], el);
+  }
+
+  // 같은 숫자 여러 장: 내는 순서대로 누르면 번호가 붙고, 마지막에 누른 카드가 맨 위
+  function showOrderPop(el, same, tapped) {
+    closePop();
+    const r = el.getBoundingClientRect();
+    pop = document.createElement('div');
+    pop.className = 'quick-pop order';
+    pop.innerHTML = '<div class="op-hint">내는 순서대로 누르세요 · <b>마지막이 맨 위</b></div><div class="op-cards"></div><div class="op-actions"></div>';
+    const order = [];
+    const btns = new Map();
+    const box = pop.querySelector('.op-cards');
+    for (const x of same) {
+      const b = document.createElement('button');
+      b.className = 'op-card';
+      b.innerHTML = `<img src="${cardSrc(x)}" alt="${cardName(x)}" draggable="false"><span class="op-no"></span>`;
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const i = order.indexOf(x.id);
+        if (i >= 0) order.splice(i, 1);
+        else order.push(x.id);
+        refresh();
+      };
+      btns.set(x.id, b);
+      box.appendChild(b);
+    }
+    const acts = pop.querySelector('.op-actions');
+    const one = document.createElement('button');
+    one.className = 'qp-btn';
+    one.textContent = `${cardName(tapped)} 1장만`;
+    one.onclick = (e) => { e.stopPropagation(); choose([tapped.id], el); };
+    const go = document.createElement('button');
+    go.className = 'qp-btn primary';
+    go.onclick = (e) => { e.stopPropagation(); if (order.length) choose(order.slice(), el); };
+    acts.append(one, go);
+    function refresh() {
+      for (const x of same) {
+        const i = order.indexOf(x.id);
+        const b = btns.get(x.id);
+        const isTop = i >= 0 && i === order.length - 1;
+        b.classList.toggle('on', i >= 0);
+        b.classList.toggle('top', isTop);
+        b.querySelector('.op-no').textContent = i < 0 ? '' : isTop && order.length > 1 ? '맨 위' : String(i + 1);
+      }
+      go.disabled = !order.length;
+      go.textContent = order.length ? `${order.length}장 내기` : '카드를 고르세요';
+    }
+    refresh();
+    document.body.appendChild(pop);
+    const w = pop.offsetWidth;
+    pop.style.left = `${Math.min(Math.max(r.left + r.width / 2 - w / 2, 8), innerWidth - w - 8)}px`;
+    pop.style.top = `${Math.max(r.top - pop.offsetHeight - 10, 8)}px`;
   }
 
   function choose(ids, el) {
