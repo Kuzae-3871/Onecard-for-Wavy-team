@@ -30,6 +30,8 @@
   let lastTurnSeq = null;
   let lastTurnPid = null;
   let lastShuffleSeq = null;
+  let lastEventSeq = null;
+  let pendingLand = null;
   let soundOn = store.get('onecard_sound') !== 'off';
 
   const socket = io();
@@ -62,8 +64,10 @@
   socket.on('connect', () => { if (joined) join(); });
   socket.on('state', (s) => {
     s.deadline = s.timeLeft != null ? Date.now() + s.timeLeft : null;
+    const snap = snapshotRects(); // 다시 그리기 전 카드 위치 (날아가는 애니메이션 출발점)
     state = s;
     render();
+    runEvents(snap);
   });
   socket.on('errorMsg', (m) => {
     toast(m, true);
@@ -223,6 +227,7 @@
       lastGameNo = state.gamesPlayed;
       lastLogSeq = 0;
       lastShuffleSeq = null;
+      lastEventSeq = null;
       resultDismissed = false;
       selected = [];
       if (g) feed.push({ sep: true, msg: `GAME ${state.gamesPlayed}` });
@@ -267,6 +272,7 @@
       const member = state.members.find((m) => m.pid === p.pid);
       const d = document.createElement('div');
       d.className = `opp ${p.pid === g.turnPid ? 'turn' : ''} ${p.out ? 'out' : ''} ${member && !member.connected ? 'offline' : ''}`;
+      d.dataset.pid = p.pid;
       const n = document.createElement('div');
       n.className = 'name';
       n.textContent = p.name;
@@ -300,7 +306,9 @@
       const el = cardEl(g.top);
       dp.appendChild(el);
       const lv = ATTACK_LEVEL[g.top.rank];
-      if (fresh && lv && g.pendingAttack > 0) attackSlam(el, lv, g.pendingAttack);
+      // 착지 연출은 날아오는 카드가 도착한 뒤에 (runEvents 에서 실행)
+      if (fresh) pendingLand = { el, lv: lv && g.pendingAttack > 0 ? lv : 0, total: g.pendingAttack };
+      else el.classList.add('land');
     }
     const st = $('statusBox');
     st.innerHTML = '';
@@ -524,6 +532,186 @@
     riffleSound();
     setTimeout(() => { fx.remove(); pile.classList.remove('shuffling'); }, 1100);
   }
+
+  // ---------- 카드 이동 애니메이션 ----------
+  const CARD_R = 0.7175;
+  const rectOf = (el) => (el ? el.getBoundingClientRect() : null);
+  const centered = (r, w) => ({ left: r.left + r.width / 2 - w / 2, top: r.top + r.height / 2 - w / CARD_R / 2, width: w, height: w / CARD_R });
+
+  function snapshotRects() {
+    const hand = new Map();
+    for (const el of document.querySelectorAll('#hand .card[data-id]')) hand.set(el.dataset.id, rectOf(el));
+    return { hand };
+  }
+
+  function doLand(land) {
+    if (!land) return;
+    land.el.style.visibility = '';
+    if (land.lv) attackSlam(land.el, land.lv, land.total);
+    else {
+      land.el.classList.add('land');
+      thock();
+    }
+  }
+
+  function runEvents(snap) {
+    const g = state?.game;
+    const land = pendingLand;
+    pendingLand = null;
+    const gameVisible = g && !$('game').classList.contains('hidden');
+    if (!gameVisible || lastEventSeq === null || g.eventSeq < lastEventSeq) {
+      if (g) lastEventSeq = g.eventSeq;
+      return doLand(land);
+    }
+    const evs = g.events.filter((e) => e.seq > lastEventSeq);
+    lastEventSeq = g.eventSeq;
+    if (!evs.length) return doLand(land);
+
+    const deck = rectOf($('deckPile').querySelector('.card.stack'));
+    const pileEl = land ? land.el : $('discardPile').querySelector('.card');
+    const pile = rectOf(pileEl);
+    const handBox = rectOf($('hand'));
+    const oppRect = (id) => rectOf(document.querySelector(`.opp[data-pid="${CSS.escape(id)}"]`));
+    // 내가 새로 받은 카드: 도착할 때까지 숨겨 둠
+    const fresh = [...$('hand').querySelectorAll('.card[data-id]')].filter((el) => !snap.hand.has(el.dataset.id));
+    fresh.forEach((el) => el.classList.add('incoming'));
+    let fi = 0;
+    if (land) land.el.style.visibility = 'hidden';
+    const lastPlay = [...evs].reverse().find((e) => e.type === 'play');
+    let delay = 0;
+
+    for (const e of evs) {
+      const mine = e.pid === pid;
+      if (e.type === 'play') {
+        e.cards.forEach((c, i) => {
+          const isFinal = e === lastPlay && i === e.cards.length - 1;
+          const src = mine ? snap.hand.get(String(c.id)) : null;
+          const o = oppRect(e.pid);
+          const from = src || (o ? centered(o, 44) : handBox ? centered(handBox, pile.width) : pile);
+          const slamNext = isFinal && land && land.lv;
+          fly({
+            face: c, from, to: pile, delay: delay + i * 110,
+            mode: slamNext ? 'toSlam' : 'play',
+            onStart: () => swish(0.5),
+            onDone: isFinal ? () => doLand(land) : null,
+          });
+        });
+        delay += (e.cards.length - 1) * 110 + 380;
+      } else if (e.type === 'draw') {
+        const attack = e.kind === 'attack';
+        const penalty = e.kind === 'penalty';
+        const k = Math.min(e.n, 10);
+        const step = attack ? 70 : 90;
+        for (let i = 0; i < k; i++) {
+          let to;
+          let target = null;
+          if (mine && fresh[fi]) {
+            target = fresh[fi++];
+            to = rectOf(target);
+          } else {
+            const o = mine ? handBox : oppRect(e.pid);
+            if (!o) continue;
+            to = centered(o, mine ? deck.width : 40);
+          }
+          const tile = mine ? null : document.querySelector(`.opp[data-pid="${CSS.escape(e.pid)}"]`);
+          fly({
+            back: true, from: deck, to, delay: delay + i * step,
+            mode: attack ? 'stab' : 'draw',
+            onStart: () => (attack ? null : flick()),
+            onDone: () => {
+              if (target) {
+                target.classList.remove('incoming');
+                target.classList.add(attack || penalty ? 'stabbed' : 'arrive');
+              }
+              const hitEl = tile || $('hand');
+              if (attack || penalty) {
+                hitEl.classList.remove('hit');
+                void hitEl.offsetWidth;
+                hitEl.classList.add('hit');
+                thud(attack ? 1 : 0.6);
+              }
+            },
+          });
+        }
+        delay += (k - 1) * step + (attack ? 300 : 420) + 60;
+      }
+    }
+    // 애니메이션 대상이 아니었던 나머지 새 카드는 바로 보여줌
+    setTimeout(() => fresh.forEach((el) => el.classList.remove('incoming')), delay + 200);
+    if (!lastPlay) doLand(land);
+  }
+
+  function fly({ face, back, from, to, delay = 0, mode = 'play', onStart, onDone }) {
+    if (!from || !to) { onDone && onDone(); return; }
+    const el = face ? cardEl(face) : document.createElement('div');
+    el.classList.add('card', 'flyer');
+    if (back) el.classList.add('back');
+    Object.assign(el.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px` });
+    el.style.setProperty('--w', `${to.width}px`);
+    document.body.appendChild(el);
+    const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+    const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+    const s0 = Math.max(0.3, from.width / to.width);
+    const start = `translate(${dx}px, ${dy}px) scale(${s0})`;
+    let frames, duration, easing;
+    if (mode === 'toSlam') {
+      // 공격 카드: 바닥 위쪽 높이 솟구친 위치까지 날아간 뒤 슬램 연출로 이어짐
+      frames = [{ transform: `${start} rotate(0deg)` }, { transform: 'translate(0, -140px) scale(2.1) rotate(-16deg)' }];
+      duration = 300; easing = 'cubic-bezier(.3,.6,.4,1)';
+    } else if (mode === 'stab') {
+      // 공격받아 가져가는 카드: 빠르게 가속해서 꽂히듯
+      frames = [
+        { transform: `${start} rotate(-28deg)`, offset: 0 },
+        { transform: `translate(${dx * 0.15}px, ${dy * 0.15 - 10}px) scale(1.18) rotate(6deg)`, offset: 0.8 },
+        { transform: 'translate(0, 6px) scale(.92) rotate(0deg)', offset: 0.9 },
+        { transform: 'none', offset: 1 },
+      ];
+      duration = 300; easing = 'cubic-bezier(.75,0,.95,.55)';
+    } else if (mode === 'draw') {
+      frames = [
+        { transform: `${start} rotate(-6deg)` },
+        { transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 40}px) scale(${(s0 + 1) / 2 * 1.05}) rotate(4deg)`, offset: 0.5 },
+        { transform: 'none' },
+      ];
+      duration = 420; easing = 'cubic-bezier(.4,0,.2,1)';
+    } else {
+      frames = [
+        { transform: `${start} rotate(-10deg)` },
+        { transform: 'translate(0, -18px) scale(1.08) rotate(3deg)', offset: 0.7 },
+        { transform: 'none' },
+      ];
+      duration = 380; easing = 'cubic-bezier(.2,.7,.3,1)';
+    }
+    const anim = el.animate(frames, { duration, delay, easing, fill: 'both' });
+    if (onStart) setTimeout(onStart, delay);
+    anim.onfinish = () => { el.remove(); onDone && onDone(); };
+  }
+
+  // 짧은 효과음들 (음원 파일 없이 생성)
+  function noiseHit({ dur, freq, type = 'bandpass', vol, q = 1 }) {
+    if (!soundOn) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx;
+      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const gn = ctx.createGain();
+      gn.gain.value = vol;
+      src.connect(f).connect(gn).connect(ctx.destination);
+      src.start();
+    } catch {}
+  }
+  const swish = (v = 1) => noiseHit({ dur: 0.16, freq: 2600, vol: 0.25 * v, q: 0.7 });
+  const flick = () => noiseHit({ dur: 0.07, freq: 3800, vol: 0.18, q: 1.2 });
+  const thock = () => noiseHit({ dur: 0.06, freq: 1200, type: 'lowpass', vol: 0.35 });
+  const thud = (v = 1) => noiseHit({ dur: 0.1, freq: 700, type: 'lowpass', vol: 0.55 * v });
 
   // ---------- 공격 카드 연출 ----------
   const ATTACK_LEVEL = { '2': 1, A: 2, BJ: 3, CJ: 4 };

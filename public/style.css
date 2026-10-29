@@ -216,15 +216,16 @@ body:has(#game:not(.hidden)) .credit { display: none; }
 .pile-label { font-size: 11px; letter-spacing: .14em; color: var(--muted); font-weight: 600; }
 .pile-label b { color: var(--white); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .card.stack { box-shadow: 2px 2px 0 #0a0a0a, 4px 4px 0 #262626, 6px 6px 0 #0a0a0a, 0 16px 30px rgba(0,0,0,.5); }
-#discardPile .card { --w: calc(var(--card-w) * 1.35); box-shadow: 0 20px 40px rgba(0,0,0,.55); animation: land .25s ease-out; }
-@keyframes land { from { transform: translateY(-10px) scale(1.04); opacity: .6; } to { transform: none; opacity: 1; } }
+#discardPile .card { --w: calc(var(--card-w) * 1.35); box-shadow: 0 20px 40px rgba(0,0,0,.55); }
+#discardPile .card.land { animation: land .22s ease-out; }
+@keyframes land { 0% { transform: scale(1.04); } 50% { transform: scale(.98); } 100% { transform: none; } }
 
 /* ---------- 공격 카드 연출 ---------- */
 #discardPile { position: relative; z-index: 4; }
 #discardPile .card.slam { animation: slam .42s cubic-bezier(.2,.9,.25,1.15) both; }
 #discardPile .card.slam.lv3, #discardPile .card.slam.lv4 { animation-duration: .5s; }
 @keyframes slam {
-  0% { transform: translateY(-140px) scale(2.1) rotate(-16deg); opacity: 0; filter: brightness(1.6); }
+  0% { transform: translateY(-140px) scale(2.1) rotate(-16deg); opacity: 1; filter: brightness(1.6); }
   35% { transform: translateY(6px) scale(.94) rotate(3deg); opacity: 1; filter: brightness(1.25); }
   55% { transform: translateY(-4px) scale(1.06) rotate(-1deg); }
   75% { transform: scale(.99); filter: none; }
@@ -434,4 +435,24 @@ body:has(#game:not(.hidden)) .credit { display: none; }
   .status .tag { padding: 7px 10px; font-size: 12px; }
   .log { height: 100px; }
   .room-code { font-size: 36px; }
+}
+
+/* ---------- 카드 이동 ---------- */
+.card.flyer { position: fixed; margin: 0; z-index: 35; pointer-events: none; box-shadow: 0 14px 30px rgba(0,0,0,.55); }
+.hand .card.incoming { opacity: 0; }
+.hand .card.arrive { animation: arrive .3s ease-out; }
+@keyframes arrive { 0% { transform: translateY(-8px) scale(1.06); box-shadow: 0 0 0 2px var(--lime), 0 8px 18px rgba(0,0,0,.45); } 100% { transform: none; } }
+.hand .card.stabbed { animation: stabbed .7s ease-out; }
+@keyframes stabbed {
+  0% { transform: translateY(8px) scale(.94); box-shadow: 0 0 0 3px #ff5a4e, 0 0 24px rgba(255,90,78,.7); }
+  25% { transform: translateY(-3px) scale(1.03); }
+  100% { transform: none; box-shadow: 0 8px 18px rgba(0,0,0,.45); }
+}
+.opp.hit, .hand.hit { animation: hit .35s ease-out; }
+@keyframes hit {
+  0% { transform: none; }
+  20% { transform: translate(-4px, 3px); box-shadow: 0 0 0 2px rgba(255,90,78,.8), 0 0 24px rgba(255,90,78,.35); }
+  45% { transform: translate(3px, -2px); }
+  70% { transform: translate(-2px, 1px); }
+  100% { transform: none; }
 }

@@ -70,6 +70,8 @@ class Game {
     this.log = [];
     this.logSeq = 0;
     this.turnSeq = 0;
+    this.events = []; // 클라이언트 애니메이션용 최근 행동 기록
+    this.eventSeq = 0;
     this.shuffleSeq = 1; // 덱을 섞을 때마다 증가 (클라이언트 셔플 연출용)
     this.over = false;
     this.ranking = null;
@@ -103,6 +105,12 @@ class Game {
 
   player(pid) {
     return this.players.find((p) => p.pid === pid);
+  }
+
+  pushEvent(e) {
+    e.seq = ++this.eventSeq;
+    this.events.push(e);
+    if (this.events.length > 20) this.events.shift();
   }
 
   addLog(msg) {
@@ -243,6 +251,7 @@ class Game {
     const cards = cardIds.map((id) => p.hand.find((c) => c.id === id));
     p.hand = p.hand.filter((c) => !cardIds.includes(c.id));
     for (const c of cards) this.discard.push(c);
+    this.pushEvent({ type: 'play', pid, cards });
     const last = cards[cards.length - 1];
 
     this.declaredSuit = null;
@@ -310,6 +319,7 @@ class Game {
     if (this.current.pid !== pid) return '내 차례가 아닙니다.';
     const n = this.pendingAttack > 0 ? this.pendingAttack : 1;
     const got = this.drawCards(p, n);
+    this.pushEvent({ type: 'draw', pid, n: got, kind: this.pendingAttack > 0 ? 'attack' : 'normal' });
     if (this.pendingAttack > 0) this.addLog(`💣 ${p.name} 님 공격을 받아 ${got}장 먹음`);
     else if (this.kChain) this.addLog(`${p.name} 님 K 뒤에 낼 카드가 없어 1장 받음`);
     else this.addLog(`${p.name} 님 1장 받음`);
@@ -335,7 +345,8 @@ class Game {
     if (caught.length === 0) return null;
     for (const t of caught) {
       this.oneCard.delete(t.pid);
-      this.drawCards(t, 1);
+      const got = this.drawCards(t, 1);
+      this.pushEvent({ type: 'draw', pid: t.pid, n: got, kind: 'penalty' });
       this.addLog(`🚨 ${p.name} 님이 ${t.name} 님의 원카드를 먼저 외쳤습니다! ${t.name} 님 1장 받음`);
       this.checkBankrupt(t);
     }
@@ -351,6 +362,7 @@ class Game {
     const p = this.current;
     // 시간 초과 패널티: 원래 받을 카드(1장 또는 공격 누적)에 1장 더
     const got = this.drawCards(p, 1);
+    this.pushEvent({ type: 'draw', pid: p.pid, n: got, kind: 'penalty' });
     this.addLog(`⏰ ${p.name} 님 시간 초과! 패널티 ${got}장`);
     this.draw(p.pid);
   }
@@ -382,6 +394,8 @@ class Game {
       ranking: this.ranking,
       turnSeq: this.turnSeq,
       shuffleSeq: this.shuffleSeq,
+      events: this.events.slice(-10),
+      eventSeq: this.eventSeq,
     };
   }
 }
