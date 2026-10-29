@@ -90,7 +90,8 @@
       <span class="chip code-chip"><span class="dot"></span><span id="gameCode"></span></span>
       <span id="dirInfo" class="chip"></span>
       <span id="timer" class="chip timer"></span>
-      <button id="copyBtn2" class="btn small">초대 링크</button>
+      <button id="soundBtn" class="btn small sound-btn" aria-label="소리"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path class="wave" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/><path class="mute" d="m22 9-6 6M16 9l6 6"/></svg><span class="lbl">소리 켬</span></button>
+      <button id="copyBtn2" class="btn small">초대<span class="lbl"> 링크</span></button>
     </header>
 
     <div id="opponents" class="opponents"></div>
@@ -151,6 +152,7 @@
     </div>
   </div>
 
+  <div id="turnFlash" class="turn-flash" aria-hidden="true"><span>내 차례</span></div>
   <div id="toast" class="toast hidden"></div>
 
   <footer class="credit">Card faces: Vectorized Playing Cards 1.3 © Chris Aguilar (LGPL-3.0)</footer>

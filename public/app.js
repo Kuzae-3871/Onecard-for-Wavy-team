@@ -28,6 +28,8 @@
   let lastGameNo = -1;
   let resultDismissed = false;
   let lastTurnSeq = null;
+  let lastTurnPid = null;
+  let soundOn = store.get('onecard_sound') !== 'off';
 
   const socket = io();
 
@@ -303,11 +305,20 @@
     const banner = $('turnBanner');
     const mine = isMyTurn();
     banner.className = `turn-banner ${mine ? 'mine' : ''}`;
+    $('game').classList.toggle('my-turn', mine);
     if (g.over) banner.textContent = '게임 종료';
-    else if (mine) banner.textContent = g.pendingAttack > 0 ? `내 차례! 막거나 ${g.pendingAttack}장 받기` : g.kChain ? '내 차례! K 효과로 한 장 더' : '내 차례!';
-    else banner.textContent = `${turnP ? turnP.name : ''} 님 차례`;
-    if (mine && lastTurnSeq !== g.turnSeq) { selected = []; if (navigator.vibrate) navigator.vibrate(60); }
+    else if (mine) {
+      const sub = g.pendingAttack > 0 ? `막거나 ${g.pendingAttack}장 받기` : g.kChain ? 'K 효과로 한 장 더' : '카드를 내거나 받으세요';
+      banner.innerHTML = `<span class="mine-pill"><span class="dot"></span>내 차례</span><span class="mine-sub">${sub}</span>`;
+    } else banner.textContent = `${turnP ? turnP.name : ''} 님 차례`;
+    if (mine && lastTurnSeq !== g.turnSeq) {
+      selected = [];
+      // 다른 사람 → 나로 넘어온 순간에만 알림 (K 로 이어서 내는 건 제외)
+      if (lastTurnPid !== pid) turnCue();
+    }
     lastTurnSeq = g.turnSeq;
+    lastTurnPid = g.turnPid;
+    updateTitle(mine);
 
     // 버튼
     $('playBtn').disabled = !mine;
@@ -413,6 +424,64 @@
   }
   setInterval(renderTimer, 500);
   window.addEventListener('resize', () => { if (state?.game) renderHand(); });
+
+  // ---------- 내 차례 알림 ----------
+  let audioCtx = null;
+  function chime() {
+    if (!soundOn) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = audioCtx.currentTime;
+      [880, 1318.5].forEach((f, i) => {
+        const o = audioCtx.createOscillator();
+        const gn = audioCtx.createGain();
+        o.type = 'sine';
+        o.frequency.value = f;
+        const t = t0 + i * 0.12;
+        gn.gain.setValueAtTime(0.0001, t);
+        gn.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+        gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+        o.connect(gn).connect(audioCtx.destination);
+        o.start(t);
+        o.stop(t + 0.4);
+      });
+    } catch {}
+  }
+
+  function turnCue() {
+    chime();
+    if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+    const f = $('turnFlash');
+    f.classList.remove('show');
+    void f.offsetWidth; // 애니메이션 재시작
+    f.classList.add('show');
+  }
+
+  const baseTitle = document.title;
+  let titleTimer = null;
+  function updateTitle(mine) {
+    clearInterval(titleTimer);
+    document.title = baseTitle;
+    if (!mine) return;
+    // 다른 탭을 보고 있어도 알 수 있게 탭 제목 깜빡임
+    let on = false;
+    titleTimer = setInterval(() => {
+      on = !on;
+      document.title = on ? '● 내 차례! · One Card' : baseTitle;
+    }, 900);
+  }
+
+  function renderSoundBtn() {
+    $('soundBtn').querySelector('.lbl').textContent = soundOn ? '소리 켬' : '소리 끔';
+    $('soundBtn').classList.toggle('off', !soundOn);
+  }
+  $('soundBtn').onclick = () => {
+    soundOn = !soundOn;
+    store.set('onecard_sound', soundOn ? 'on' : 'off');
+    renderSoundBtn();
+    if (soundOn) chime();
+  };
+  renderSoundBtn();
 
   let toastTimer = null;
   function toast(msg, err) {
