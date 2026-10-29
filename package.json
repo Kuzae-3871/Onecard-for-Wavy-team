@@ -1,0 +1,15 @@
+{
+  "name": "onecard-online",
+  "version": "1.0.0",
+  "description": "링크로 함께하는 원카드 멀티플레이 웹게임",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/sim.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}

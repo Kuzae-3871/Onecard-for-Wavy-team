@@ -1,0 +1,427 @@
+'use strict';
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const SUIT_SYM = { S: '♠', H: '♥', D: '♦', C: '♣' };
+  const SUIT_ORDER = { S: 0, H: 1, D: 2, C: 3 };
+  const RANK_ORDER = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  const isRed = (s) => s === 'H' || s === 'D';
+
+  // 브라우저별 고유 ID (재접속 시 자리 유지용)
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+  let pid = store.get('onecard_pid');
+  if (!pid) {
+    pid = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
+    store.set('onecard_pid', pid);
+  }
+
+  const params = new URLSearchParams(location.search);
+  let roomCode = (params.get('room') || '').toUpperCase() || null;
+  let myName = store.get('onecard_name') || '';
+  let state = null;
+  let joined = false;
+  let selected = [];
+  let feed = [];
+  let lastLogSeq = 0;
+  let lastGameNo = -1;
+  let resultDismissed = false;
+  let lastTurnSeq = null;
+
+  const socket = io();
+
+  // ---------- 홈 ----------
+  $('nameInput').value = myName;
+  if (roomCode) {
+    $('enterBtn').textContent = '입장하기';
+    $('homeSub').textContent = `방 ${roomCode} 에 초대되었습니다`;
+  }
+  $('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enterBtn').click(); });
+  $('enterBtn').onclick = () => {
+    const name = $('nameInput').value.trim();
+    if (!name) return toast('닉네임을 입력하세요', true);
+    myName = name;
+    store.set('onecard_name', name);
+    if (roomCode) return join();
+    socket.emit('create', (code) => {
+      roomCode = code;
+      history.replaceState(null, '', `?room=${code}`);
+      join();
+    });
+  };
+
+  function join() {
+    socket.emit('join', { code: roomCode, name: myName, pid });
+    joined = true;
+  }
+
+  socket.on('connect', () => { if (joined) join(); });
+  socket.on('state', (s) => {
+    s.deadline = s.timeLeft != null ? Date.now() + s.timeLeft : null;
+    state = s;
+    render();
+  });
+  socket.on('errorMsg', (m) => {
+    toast(m, true);
+    if (!state && m.includes('존재하지 않는 방')) {
+      joined = false;
+      roomCode = null;
+      history.replaceState(null, '', location.pathname);
+      $('enterBtn').textContent = '방 만들기';
+      $('homeSub').textContent = '방이 없어졌어요. 새로 만들어 주세요';
+    }
+  });
+  socket.on('kicked', (m) => { joined = false; toast(m, true); });
+  socket.on('chat', ({ name, text }) => {
+    feed.push({ chat: true, msg: `${name}: ${text}` });
+    renderLog();
+  });
+
+  // ---------- 대기실 ----------
+  const shareUrl = () => `${location.origin}${location.pathname}?room=${state.code}`;
+  async function copyLink() {
+    const url = shareUrl();
+    try {
+      if (navigator.share && /Mobi/i.test(navigator.userAgent)) await navigator.share({ title: '원카드 하자!', url });
+      else { await navigator.clipboard.writeText(url); toast('링크를 복사했어요'); }
+    } catch {
+      $('shareLink').select();
+      document.execCommand && document.execCommand('copy');
+      toast('링크를 복사했어요');
+    }
+  }
+  $('copyBtn').onclick = copyLink;
+  $('copyBtn2').onclick = copyLink;
+  $('startBtn').onclick = () => socket.emit('start');
+  $('leaveBtn').onclick = () => {
+    socket.emit('leave');
+    joined = false;
+    state = null;
+    location.href = location.pathname;
+  };
+  $('turnTimeSel').onchange = (e) => socket.emit('settings', { turnTime: Number(e.target.value) });
+
+  // ---------- 게임 ----------
+  $('drawBtn').onclick = () => {
+    if (state?.game?.over) { resultDismissed = false; return render(); }
+    socket.emit('draw');
+    selected = [];
+  };
+  $('deckPile').onclick = () => { if (isMyTurn()) $('drawBtn').click(); };
+  $('playBtn').onclick = playSelected;
+  $('oneCardBtn').onclick = () => socket.emit('onecard');
+  $('againBtn').onclick = () => socket.emit('start');
+  $('toLobbyBtn').onclick = () => { resultDismissed = true; render(); };
+  $('chatForm').onsubmit = (e) => {
+    e.preventDefault();
+    const t = $('chatInput').value.trim();
+    if (t) socket.emit('chat', t);
+    $('chatInput').value = '';
+  };
+
+  let pendingPlay = null;
+  document.querySelectorAll('.suit-btn').forEach((b) => {
+    b.onclick = () => {
+      $('suitModal').classList.add('hidden');
+      if (pendingPlay) socket.emit('play', { cardIds: pendingPlay, suit: b.dataset.suit });
+      pendingPlay = null;
+      selected = [];
+    };
+  });
+  $('suitCancel').onclick = () => { $('suitModal').classList.add('hidden'); pendingPlay = null; };
+
+  function isMyTurn() {
+    return state?.game && !state.game.over && state.game.turnPid === pid;
+  }
+
+  function playSelected() {
+    if (!isMyTurn()) return toast('내 차례가 아닙니다', true);
+    if (!selected.length) return toast('낼 카드를 선택하세요 (카드를 두 번 누르면 바로 냄)', true);
+    send(selected.slice());
+  }
+
+  function send(ids) {
+    const hand = state.game.hand;
+    const last = hand.find((c) => c.id === ids[ids.length - 1]);
+    if (last && last.rank === '7') {
+      pendingPlay = ids;
+      $('suitModal').classList.remove('hidden');
+      return;
+    }
+    socket.emit('play', { cardIds: ids });
+    selected = [];
+  }
+
+  let lastTap = { id: null, t: 0 };
+  function onCardTap(c) {
+    const now = Date.now();
+    // 더블탭 → 그 카드 한 장 바로 내기
+    if (lastTap.id === c.id && now - lastTap.t < 350 && isMyTurn()) {
+      lastTap = { id: null, t: 0 };
+      selected = [];
+      send([c.id]);
+      return;
+    }
+    lastTap = { id: c.id, t: now };
+    const i = selected.indexOf(c.id);
+    if (i >= 0) selected.splice(i, 1);
+    else selected.push(c.id);
+    markSelection();
+  }
+
+  // DOM 을 다시 만들지 않고 선택 표시만 갱신 (더블탭이 끊기지 않도록)
+  function markSelection() {
+    for (const el of $('hand').querySelectorAll('.card')) {
+      const id = Number(el.dataset.id);
+      const si = selected.indexOf(id);
+      el.classList.toggle('selected', si >= 0);
+      el.querySelector('.sel-no')?.remove();
+      if (si >= 0 && selected.length > 1) el.insertAdjacentHTML('beforeend', `<span class="sel-no">${si + 1}</span>`);
+    }
+  }
+
+  // ---------- 렌더링 ----------
+  const cardFile = (c) => (c.suit ? c.rank + c.suit : c.rank);
+  const cardName = (c) => (c.rank === 'BJ' ? '흑백조커' : c.rank === 'CJ' ? '컬러조커' : SUIT_SYM[c.suit] + c.rank);
+
+  function cardEl(c) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    const img = document.createElement('img');
+    img.src = `cards/${cardFile(c)}.svg`;
+    img.alt = cardName(c);
+    img.draggable = false;
+    el.appendChild(img);
+    return el;
+  }
+
+  // 카드 이미지 미리 불러오기
+  for (const s of 'SHDC') for (const r of RANK_ORDER) new Image().src = `cards/${r}${s}.svg`;
+  for (const f of ['BJ', 'CJ', 'back']) new Image().src = `cards/${f}.svg`;
+  let lastTopId = null;
+
+  function sortHand(hand) {
+    const key = (c) => (c.suit ? SUIT_ORDER[c.suit] * 20 + RANK_ORDER.indexOf(c.rank) : 100 + (c.rank === 'CJ' ? 1 : 0));
+    return hand.slice().sort((a, b) => key(a) - key(b));
+  }
+
+  function show(id) {
+    for (const s of ['home', 'lobby', 'game']) $(s).classList.toggle('hidden', s !== id);
+  }
+
+  function render() {
+    if (!state) return show('home');
+    const g = state.game;
+    const inGame = g && g.players.some((p) => p.pid === pid);
+    const amHost = state.hostPid === pid;
+
+    if (state.gamesPlayed !== lastGameNo) {
+      lastGameNo = state.gamesPlayed;
+      lastLogSeq = 0;
+      resultDismissed = false;
+      selected = [];
+      if (g) feed.push({ sep: true, msg: `GAME ${state.gamesPlayed}` });
+    }
+
+    if (!g || (!inGame && g.over)) {
+      show('lobby');
+      $('lobbyCode').textContent = state.code;
+      $('shareLink').value = shareUrl();
+      $('memberList').innerHTML = '';
+      for (const m of state.members) {
+        const li = document.createElement('li');
+        const idx = state.members.indexOf(m) + 1;
+        li.innerHTML = `<span class="no">${String(idx).padStart(2, '0')}</span><span class="nm"></span><span class="tag"></span>`;
+        li.children[1].textContent = m.name + (m.pid === pid ? ' (나)' : '');
+        li.children[2].textContent = [m.pid === state.hostPid ? '방장' : '', !m.connected ? '오프라인' : ''].filter(Boolean).join(' · ');
+        if (m.pid === state.hostPid) li.children[2].classList.add('host');
+        $('memberList').appendChild(li);
+      }
+      $('memberCount').textContent = `${state.members.length} / 6`;
+      $('turnTimeSel').value = String(state.turnTime);
+      $('turnTimeSel').disabled = !amHost;
+      $('startBtn').classList.toggle('hidden', !amHost);
+      const n = state.members.filter((m) => m.connected).length;
+      $('lobbyHint').textContent = amHost
+        ? (n < 2 ? '링크를 공유해 친구를 초대하세요 (2~6명)' : `${n}명 준비 완료${n > 6 ? ' · 앞의 6명만 참가' : ''}`)
+        : '방장이 게임을 시작하기를 기다리고 있어요';
+      $('startBtn').disabled = n < 2;
+      return;
+    }
+
+    show('game');
+    $('gameCode').textContent = state.code;
+    $('dirInfo').textContent = g.direction === 1 ? '↻ 시계방향' : '↺ 반시계방향';
+
+    // 상대 (내 다음 순서부터 좌석 순으로)
+    const opp = $('opponents');
+    opp.innerHTML = '';
+    const myIdx = g.players.findIndex((p) => p.pid === pid);
+    const order = g.players.map((_, i) => g.players[(i + Math.max(myIdx, 0) + 1) % g.players.length]).filter((p) => p.pid !== pid);
+    for (const p of order) {
+      const member = state.members.find((m) => m.pid === p.pid);
+      const d = document.createElement('div');
+      d.className = `opp ${p.pid === g.turnPid ? 'turn' : ''} ${p.out ? 'out' : ''} ${member && !member.connected ? 'offline' : ''}`;
+      const n = document.createElement('div');
+      n.className = 'name';
+      n.textContent = p.name;
+      d.appendChild(n);
+      const cnt = document.createElement('div');
+      cnt.className = 'count';
+      cnt.textContent = p.result === 'bankrupt' ? '파산' : p.out ? `${p.rank}등` : `${p.count}장`;
+      d.appendChild(cnt);
+      const mini = document.createElement('div');
+      mini.className = 'mini-cards';
+      for (let i = 0; i < Math.min(p.count, 10); i++) mini.appendChild(document.createElement('span'));
+      d.appendChild(mini);
+      if (p.oneCard) d.insertAdjacentHTML('beforeend', '<span class="badge alert">ONE?</span>');
+      else if (p.result === 'finish' || p.result === 'last') d.insertAdjacentHTML('beforeend', `<span class="badge done">${p.rank}등</span>`);
+      else if (p.result === 'bankrupt') d.insertAdjacentHTML('beforeend', '<span class="badge bust">파산</span>');
+      opp.appendChild(d);
+    }
+
+    // 테이블
+    $('deckCount').textContent = g.deckCount;
+    const dp = $('discardPile');
+    if (lastTopId !== g.top.id || !dp.firstChild) {
+      lastTopId = g.top.id;
+      dp.innerHTML = '';
+      dp.appendChild(cardEl(g.top));
+    }
+    const st = $('statusBox');
+    st.innerHTML = '';
+    const tag = (cls, k, v, vcls = '') => st.insertAdjacentHTML('beforeend', `<div class="tag ${cls}"><span class="k">${k}</span><span class="v ${vcls}">${v}</span></div>`);
+    if (g.pendingAttack > 0) tag('attack', '공격 누적', `+${g.pendingAttack}`);
+    if (g.declaredSuit) tag('suit-tag', '모양 변경', SUIT_SYM[g.declaredSuit], isRed(g.declaredSuit) ? 'red' : '');
+    if (g.kChain) tag('k-tag', 'K 한 장 더', SUIT_SYM[g.kChain.suit], isRed(g.kChain.suit) ? 'red' : '');
+    tag('', '바닥', g.discardCount);
+
+    // 차례
+    const me = g.players.find((p) => p.pid === pid);
+    const turnP = g.players.find((p) => p.pid === g.turnPid);
+    const banner = $('turnBanner');
+    const mine = isMyTurn();
+    banner.className = `turn-banner ${mine ? 'mine' : ''}`;
+    if (g.over) banner.textContent = '게임 종료';
+    else if (mine) banner.textContent = g.pendingAttack > 0 ? `내 차례! 막거나 ${g.pendingAttack}장 받기` : g.kChain ? '내 차례! K 효과로 한 장 더' : '내 차례!';
+    else banner.textContent = `${turnP ? turnP.name : ''} 님 차례`;
+    if (mine && lastTurnSeq !== g.turnSeq) { selected = []; if (navigator.vibrate) navigator.vibrate(60); }
+    lastTurnSeq = g.turnSeq;
+
+    // 버튼
+    $('playBtn').disabled = !mine;
+    $('drawBtn').disabled = !mine && !g.over;
+    $('drawBtn').textContent = g.over ? '결과 보기' : g.pendingAttack > 0 ? `${g.pendingAttack}장 받기` : '카드 받기';
+    const anyPending = g.players.some((p) => p.oneCard);
+    $('oneCardBtn').classList.toggle('alert', anyPending);
+    $('oneCardBtn').disabled = g.over || !me;
+
+    $('meInfo').textContent = me
+      ? me.out ? (me.result === 'bankrupt' ? '파산했습니다 · 관전 중' : `${me.rank}등으로 완주! 관전 중`) : `${myName || me.name} · ${me.count}장`
+      : '관전 중 (다음 판부터 참가)';
+
+    renderHand();
+    renderLog();
+    renderTimer();
+
+    // 결과
+    if (g.over && !resultDismissed) {
+      const list = $('rankList');
+      list.innerHTML = '';
+      g.ranking.forEach((id) => {
+        const p = g.players.find((x) => x.pid === id);
+        const li = document.createElement('li');
+        li.innerHTML = '<span class="nm"></span><span class="meta"></span>';
+        li.children[0].textContent = p.name;
+        li.children[1].textContent = [p.result === 'bankrupt' ? '파산' : '', id === pid ? '나' : ''].filter(Boolean).join(' · ');
+        if (id === pid) li.children[1].classList.add('me');
+        list.appendChild(li);
+      });
+      $('againBtn').classList.toggle('hidden', !amHost);
+      $('resultHint').textContent = amHost ? '같은 멤버로 한 판 더 하면 1등이 선입니다' : '방장이 다음 판을 시작할 수 있어요 (1등이 선)';
+      $('resultModal').classList.remove('hidden');
+    } else {
+      $('resultModal').classList.add('hidden');
+    }
+  }
+
+  function renderHand() {
+    const g = state?.game;
+    const h = $('hand');
+    h.innerHTML = '';
+    if (!g || !g.hand) return;
+    selected = selected.filter((id) => g.hand.some((c) => c.id === id));
+    const mine = isMyTurn();
+    const cards = sortHand(g.hand);
+    // 손패가 많으면 겹쳐서 한 줄(필요하면 두 줄)에 배치
+    const cardW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-w')) || 76;
+    const avail = Math.max(h.clientWidth - 8, cardW * 2);
+    const gap = 8;
+    const stepFor = (n) => (n <= 1 ? cardW : Math.min(cardW + gap, (avail - cardW) / (n - 1)));
+    const rows = stepFor(cards.length) < cardW * 0.42 ? 2 : 1;
+    const perRow = Math.ceil(cards.length / rows);
+    for (let r = 0; r < rows; r++) {
+      const rowCards = cards.slice(r * perRow, (r + 1) * perRow);
+      const step = stepFor(rowCards.length);
+      const row = document.createElement('div');
+      row.className = 'hand-row';
+      rowCards.forEach((c, i) => {
+        const el = cardEl(c);
+        el.dataset.id = c.id;
+        if (i > 0) el.style.marginLeft = `${step - cardW}px`;
+        if (mine) el.classList.add(g.playable.includes(c.id) ? 'playable' : 'dim');
+        el.onclick = () => onCardTap(c);
+        row.appendChild(el);
+      });
+      h.appendChild(row);
+    }
+    markSelection();
+  }
+
+  function renderLog() {
+    const g = state?.game;
+    if (g) {
+      const fresh = g.log.filter((l) => l.seq > lastLogSeq);
+      for (const l of fresh) {
+        feed.push({ chat: false, msg: l.msg });
+        if (/🚨|💥|🏆|☝️|🎉/.test(l.msg)) toast(l.msg);
+      }
+      if (fresh.length) lastLogSeq = fresh[fresh.length - 1].seq;
+    }
+    if (feed.length > 200) feed = feed.slice(-200);
+    const box = $('log');
+    if (!box.offsetParent) return;
+    box.innerHTML = '';
+    for (const f of feed) {
+      const d = document.createElement('div');
+      if (f.chat) d.className = 'chat-line';
+      if (f.sep) d.className = 'sep';
+      d.textContent = f.msg;
+      box.appendChild(d);
+    }
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function renderTimer() {
+    const t = $('timer');
+    if (!state?.deadline || !state.game || state.game.over) { t.classList.add('hidden'); return; }
+    const left = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
+    t.classList.remove('hidden');
+    t.textContent = `⏱ ${left}초`;
+    t.classList.toggle('warn', left <= 5);
+  }
+  setInterval(renderTimer, 500);
+  window.addEventListener('resize', () => { if (state?.game) renderHand(); });
+
+  let toastTimer = null;
+  function toast(msg, err) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = `toast ${err ? 'error' : ''}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.add('hidden'), 2200);
+  }
+
+  render();
+})();

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="theme-color" content="#121212" />
+  <title>One Card</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="waves" aria-hidden="true"></div>
+
+  <!-- 홈 / 입장 -->
+  <section id="home" class="screen">
+    <div class="home">
+      <div class="hero">
+        <p class="eyebrow"><span class="dot"></span>ONE CARD · MULTIPLAYER</p>
+        <h1 class="headline">링크 하나로,<br />함께 원카드.</h1>
+        <p class="sub" id="homeSub">방을 만들고 링크를 보내면 바로 시작돼요.</p>
+        <div class="hero-fan" aria-hidden="true">
+          <img src="cards/CJ.svg" alt="" />
+          <img src="cards/AS.svg" alt="" />
+          <img src="cards/KH.svg" alt="" />
+        </div>
+      </div>
+
+      <div class="panel join">
+        <label class="field-label" for="nameInput">닉네임</label>
+        <input id="nameInput" maxlength="12" placeholder="이름을 입력하세요" autocomplete="off" />
+        <button id="enterBtn" class="btn primary big">방 만들기</button>
+
+        <details class="rules">
+          <summary>게임 규칙</summary>
+          <ol class="spec">
+            <li><span>기본</span><p>바닥 카드와 <b>모양</b> 또는 <b>숫자</b>가 같으면 냄. 처음 7장</p></li>
+            <li><span>같은 숫자</span><p>바닥에 이미 그 숫자가 깔려 있을 때만 여러 장 동시에 (♥5 → ♠5·♦5)</p></li>
+            <li><span>2</span><p>공격 +2 · 2, 같은 모양 A, 조커로 방어</p></li>
+            <li><span>A</span><p>공격 +3 · A 또는 조커로만 방어</p></li>
+            <li><span>흑백조커</span><p>공격 +5 · ♠A 또는 컬러조커로만 방어</p></li>
+            <li><span>컬러조커</span><p>공격 +7 · 방어 불가</p></li>
+            <li><span>누적</span><p>공격은 쌓임 (흑백조커 → ♠A 면 다음 사람 8장)</p></li>
+            <li><span>7 · J · Q</span><p>모양 변경 · 다음 사람 점프 · 방향 반대(낸 사람 차례 끝)</p></li>
+            <li><span>K</span><p>같은 모양으로 한 번 더. 낼 카드 없으면 1장</p></li>
+            <li><span>원카드</span><p>한 장 남으면 버튼! 남이 먼저 누르면 1장 받음</p></li>
+            <li><span>파산</span><p>20장 이상이면 탈락. 덱이 떨어지면 낸 카드를 섞어 계속</p></li>
+            <li><span>선</span><p>첫 판 랜덤, 다음 판부터 전 판 1등</p></li>
+          </ol>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- 대기실 -->
+  <section id="lobby" class="screen hidden">
+    <div class="panel lobby">
+      <div class="lobby-head">
+        <p class="eyebrow"><span class="dot"></span>ROOM</p>
+        <h2 class="room-code" id="lobbyCode"></h2>
+      </div>
+      <div class="share">
+        <input id="shareLink" readonly />
+        <button id="copyBtn" class="btn primary">링크 복사</button>
+      </div>
+      <div class="section-label">참가자 <span id="memberCount"></span></div>
+      <ul id="memberList" class="members"></ul>
+      <div class="settings">
+        <span>턴 제한시간</span>
+        <select id="turnTimeSel">
+          <option value="0">없음</option>
+          <option value="15">15초</option>
+          <option value="20">20초</option>
+          <option value="30">30초</option>
+          <option value="45">45초</option>
+          <option value="60">60초</option>
+        </select>
+      </div>
+      <p class="hint" id="lobbyHint"></p>
+      <button id="startBtn" class="btn primary big">게임 시작</button>
+      <button id="leaveBtn" class="btn ghost">나가기</button>
+    </div>
+  </section>
+
+  <!-- 게임 -->
+  <section id="game" class="screen hidden">
+    <header class="topbar">
+      <span class="chip code-chip"><span class="dot"></span><span id="gameCode"></span></span>
+      <span id="dirInfo" class="chip"></span>
+      <span id="timer" class="chip timer"></span>
+      <button id="copyBtn2" class="btn small">초대 링크</button>
+    </header>
+
+    <div id="opponents" class="opponents"></div>
+
+    <div class="table">
+      <div class="pile" id="deckPile" title="카드 받기">
+        <div class="card back stack"></div>
+        <span class="pile-label">DECK <b id="deckCount"></b></span>
+      </div>
+      <div class="pile" id="discardPile"></div>
+      <div class="status" id="statusBox"></div>
+    </div>
+
+    <div id="turnBanner" class="turn-banner"></div>
+
+    <div class="actions">
+      <button id="drawBtn" class="btn outline">카드 받기</button>
+      <button id="playBtn" class="btn primary">내기</button>
+      <button id="oneCardBtn" class="btn onecard">원카드!</button>
+    </div>
+
+    <div id="hand" class="hand"></div>
+    <div class="me-info" id="meInfo"></div>
+
+    <div class="bottom">
+      <div id="log" class="log"></div>
+      <form id="chatForm" class="chat">
+        <input id="chatInput" maxlength="100" placeholder="메시지 보내기" autocomplete="off" />
+        <button class="btn small">전송</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- 7 모양 선택 -->
+  <div id="suitModal" class="modal hidden">
+    <div class="panel">
+      <p class="eyebrow"><span class="dot"></span>SEVEN</p>
+      <h3>바꿀 모양을 고르세요</h3>
+      <div class="suits">
+        <button data-suit="S" class="suit-btn">♠</button>
+        <button data-suit="H" class="suit-btn red">♥</button>
+        <button data-suit="D" class="suit-btn red">♦</button>
+        <button data-suit="C" class="suit-btn">♣</button>
+      </div>
+      <button id="suitCancel" class="btn ghost">취소</button>
+    </div>
+  </div>
+
+  <!-- 결과 -->
+  <div id="resultModal" class="modal hidden">
+    <div class="panel">
+      <p class="eyebrow"><span class="dot"></span>RESULT</p>
+      <h3>게임 종료</h3>
+      <ol id="rankList" class="rank-list"></ol>
+      <p class="hint" id="resultHint"></p>
+      <button id="againBtn" class="btn primary big">한 판 더</button>
+      <button id="toLobbyBtn" class="btn ghost">닫기</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <footer class="credit">Card faces: Vectorized Playing Cards 1.3 © Chris Aguilar (LGPL-3.0)</footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
