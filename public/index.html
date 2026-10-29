@@ -127,7 +127,10 @@
         <input id="chatInput" maxlength="100" placeholder="메시지 보내기" autocomplete="off" />
         <button class="btn small">전송</button>
       </form>
-      <p class="made-by">made by <b>쿠재</b></p>
+      <div class="game-foot">
+        <p class="made-by">made by <b>쿠재</b></p>
+        <button id="forfeitBtn" class="forfeit-btn">게임 포기</button>
+      </div>
     </div>
   </section>
 
@@ -147,6 +150,16 @@
   </div>
 
   <!-- 결과 -->
+  <div id="forfeitModal" class="modal hidden">
+    <div class="panel">
+      <p class="eyebrow"><span class="dot"></span>FORFEIT</p>
+      <h3>정말 포기할까요?</h3>
+      <p class="hint">포기하면 이번 판은 꼴등으로 처리되고, 남은 사람들은 계속 진행합니다. 다음 판에는 다시 참가할 수 있어요.</p>
+      <button id="forfeitConfirm" class="btn big danger">포기하기</button>
+      <button id="forfeitCancel" class="btn ghost">계속하기</button>
+    </div>
+  </div>
+
   <div id="resultModal" class="modal hidden">
     <div class="panel">
       <p class="eyebrow"><span class="dot"></span>RESULT</p>

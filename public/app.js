@@ -107,6 +107,12 @@
   $('copyBtn2').onclick = copyLink;
   $('startBtn').onclick = () => socket.emit('start');
   $('addBotBtn').onclick = () => socket.emit('addBot');
+  $('forfeitBtn').onclick = () => $('forfeitModal').classList.remove('hidden');
+  $('forfeitCancel').onclick = () => $('forfeitModal').classList.add('hidden');
+  $('forfeitConfirm').onclick = () => {
+    $('forfeitModal').classList.add('hidden');
+    socket.emit('forfeit');
+  };
   $('leaveBtn').onclick = () => {
     socket.emit('leave');
     joined = false;
@@ -302,7 +308,7 @@
       d.appendChild(n);
       const cnt = document.createElement('div');
       cnt.className = 'count';
-      cnt.textContent = p.result === 'bankrupt' ? '파산' : p.out ? `${p.rank}등` : `${p.count}장`;
+      cnt.textContent = p.result === 'bankrupt' ? '파산' : p.result === 'forfeit' ? '포기' : p.out ? `${p.rank}등` : `${p.count}장`;
       d.appendChild(cnt);
       const mini = document.createElement('div');
       mini.className = 'mini-cards';
@@ -311,6 +317,7 @@
       if (p.oneCard) d.insertAdjacentHTML('beforeend', '<span class="badge alert">ONE?</span>');
       else if (p.result === 'finish' || p.result === 'last') d.insertAdjacentHTML('beforeend', `<span class="badge done">${p.rank}등</span>`);
       else if (p.result === 'bankrupt') d.insertAdjacentHTML('beforeend', '<span class="badge bust">파산</span>');
+      else if (p.result === 'forfeit') d.insertAdjacentHTML('beforeend', '<span class="badge bust">포기</span>');
       opp.appendChild(d);
     }
 
@@ -352,6 +359,8 @@
     const underAttack = mine && g.pendingAttack > 0;
     $('game').classList.toggle('under-attack', underAttack);
     $('dangerGlow').classList.toggle('on', underAttack);
+    // 낼 수 있는 카드가 없으면 받기 버튼만 강조
+    $('game').classList.toggle('only-draw', mine && g.playable.length === 0);
     if (g.over) banner.textContent = '게임 종료';
     else if (mine) {
       const sub = g.pendingAttack > 0 ? `막거나 ${g.pendingAttack}장 받기` : g.kChain ? 'K 효과로 한 장 더' : '카드를 내거나 받으세요';
@@ -373,9 +382,11 @@
     const anyPending = g.players.some((p) => p.oneCard);
     $('oneCardBtn').classList.toggle('alert', anyPending);
     $('oneCardBtn').disabled = g.over || !me;
+    $('forfeitBtn').classList.toggle('hidden', !me || me.out || g.over);
+    if (!me || me.out || g.over) $('forfeitModal').classList.add('hidden');
 
     $('meInfo').textContent = me
-      ? me.out ? (me.result === 'bankrupt' ? '파산했습니다 · 관전 중' : `${me.rank}등으로 완주! 관전 중`) : `${myName || me.name} · ${me.count}장`
+      ? me.out ? (me.result === 'bankrupt' ? '파산했습니다 · 관전 중' : me.result === 'forfeit' ? '포기했습니다 · 관전 중' : `${me.rank}등으로 완주! 관전 중`) : `${myName || me.name} · ${me.count}장`
       : '관전 중 (다음 판부터 참가)';
 
     renderHand();
@@ -391,7 +402,7 @@
         const li = document.createElement('li');
         li.innerHTML = '<span class="nm"></span><span class="meta"></span>';
         li.children[0].textContent = p.name;
-        li.children[1].textContent = [p.result === 'bankrupt' ? '파산' : '', id === pid ? '나' : ''].filter(Boolean).join(' · ');
+        li.children[1].textContent = [p.result === 'bankrupt' ? '파산' : p.result === 'forfeit' ? '포기' : '', id === pid ? '나' : ''].filter(Boolean).join(' · ');
         if (id === pid) li.children[1].classList.add('me');
         list.appendChild(li);
       });

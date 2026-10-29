@@ -228,6 +228,16 @@ io.on('connection', (socket) => {
     afterAction(room);
   }));
 
+  socket.on('forfeit', guard(() => {
+    const g = room.game;
+    if (!g) return;
+    const err = g.forfeit(pid);
+    if (err) return fail(err);
+    // 사람이 모두 빠지고 컴퓨터만 남으면 그 자리에서 순위를 정해 끝냄
+    if (!g.over && !g.activePlayers().some((p) => !isBotPid(room, p.pid))) g.endByCount();
+    afterAction(room);
+  }));
+
   socket.on('onecard', guard(() => {
     if (!room.game) return;
     room.game.callOneCard(pid);

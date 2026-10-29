@@ -82,6 +82,17 @@ function scenario() {
   g.timeout();
   assert.strictEqual(nxt.hand.length, n0 + 4);
   assert.strictEqual(g.pendingAttack, 0);
+  // 포기: 차례였던 사람이 포기하면 다음 사람 차례, 꼴등
+  {
+    const g2 = new Game([{ pid: 'x', name: 'X' }, { pid: 'y', name: 'Y' }, { pid: 'z', name: 'Z' }], 'x');
+    assert.strictEqual(g2.forfeit('x'), null);
+    assert.strictEqual(g2.current.pid, 'y');
+    assert(g2.forfeit('x')); // 두 번은 불가
+    g2.player('y').hand = [{ id: 990, suit: g2.top.suit, rank: '3' }];
+    g2.play('y', [990]); // y 1등 → z 혼자 남아 종료
+    assert(g2.over);
+    assert.deepStrictEqual(g2.ranking, ['y', 'z', 'x']);
+  }
   console.log('scenario ok');
 }
 scenario();
@@ -105,6 +116,7 @@ for (let n = 0; n < 3000; n++) {
     else err = g.draw(p.pid);
     assert.strictEqual(err, null, err);
     if (Math.random() < 0.03 && !g.over) g.timeout();
+    if (Math.random() < 0.004 && !g.over) g.forfeit(g.players[Math.floor(Math.random() * np)].pid);
     if (Math.random() < 0.1) g.callOneCard(g.players[Math.floor(Math.random() * np)].pid);
     const total = g.deck.length + g.discard.length + g.players.reduce((s, x) => s + x.hand.length, 0);
     assert.strictEqual(total, 54, 'card conservation');

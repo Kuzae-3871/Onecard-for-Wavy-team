@@ -67,6 +67,7 @@ class Game {
     this.oneCard = new Set(); // 원카드 선언 대기 중인 pid
     this.finished = []; // 패를 다 털어낸 순서
     this.bankrupt = []; // 파산 순서
+    this.forfeited = []; // 포기 순서 (가장 나중에 포기한 사람이 꼴등)
     this.log = [];
     this.logSeq = 0;
     this.turnSeq = 0;
@@ -184,7 +185,7 @@ class Game {
     this.over = true;
     this.pendingAttack = 0;
     this.kChain = null;
-    this.ranking = [...this.finished, ...[...this.bankrupt].reverse()];
+    this.ranking = [...this.finished, ...[...this.bankrupt].reverse(), ...this.forfeited];
     const winner = this.player(this.ranking[0]);
     this.addLog(`🏆 게임 종료! 1등: ${winner.name}`);
     return true;
@@ -354,6 +355,41 @@ class Game {
     // 차례인 사람이 파산했으면 다음 사람에게
     if (this.current.out) this.setTurn(this.nextIndex(this.turn));
     return null;
+  }
+
+  // 게임 포기: 바로 탈락, 순위는 파산자보다도 아래
+  forfeit(pid) {
+    if (this.over) return '게임이 끝났습니다.';
+    const p = this.player(pid);
+    if (!p || p.out) return '참가 중이 아닙니다.';
+    const wasTurn = this.current.pid === pid;
+    p.out = true;
+    p.result = 'forfeit';
+    this.forfeited.push(pid);
+    this.oneCard.delete(pid);
+    this.deck = shuffle(this.deck.concat(p.hand));
+    p.hand = [];
+    this.addLog(`🏳️ ${p.name} 님 게임 포기`);
+    if (this.checkEnd()) return null;
+    if (wasTurn) {
+      // 포기한 사람에게 쌓여 있던 공격은 다음 사람에게 그대로 넘어감
+      this.kChain = null;
+      this.setTurn(this.nextIndex(this.turn));
+    }
+    return null;
+  }
+
+  // 남은 사람을 패가 적은 순으로 순위를 매기고 바로 종료 (사람이 모두 빠져 컴퓨터만 남았을 때)
+  endByCount() {
+    if (this.over) return;
+    const active = this.activePlayers().sort((a, b) => a.hand.length - b.hand.length);
+    for (const p of active.slice(0, -1)) {
+      p.out = true;
+      p.result = 'finish';
+      this.finished.push(p.pid);
+    }
+    this.addLog('남은 플레이어가 모두 컴퓨터라 패가 적은 순으로 순위를 정했습니다.');
+    this.checkEnd();
   }
 
   // 시간 초과: 자동으로 카드 받기
