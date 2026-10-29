@@ -64,4 +64,5 @@ npm start
 ## 디자인
 - 컬러·타이포는 Wavyroom Brand Guidelines v1.0 을 참고: Black `#121212`, Gray `#EFEFEF`/`#DCDCDC`, Lime `#D3F170`/`#C7E261`(포인트 컬러로만), DM Sans + Pretendard, Wavy Curve 배경 라인
 - 카드 앞면(52장): [Vectorized Playing Cards 1.3](http://code.google.com/p/vectorized-playing-cards/) © 2011 Chris Aguilar, LGPL-3.0 (`public/cards/COPYING*.txt`)
+- 원본 SVG는 `assets/cards-svg/`, 화면에는 빠르게 그려지는 WebP(`public/cards/*.webp`)를 사용. 카드 그림을 바꾼 뒤 `node tools/rasterize-cards.js`로 다시 생성
 - 카드 뒷면·조커 2장(`back.svg`, `BJ.svg`, `CJ.svg`)은 이 프로젝트용으로 새로 제작

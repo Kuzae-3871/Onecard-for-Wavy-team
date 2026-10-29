@@ -163,7 +163,7 @@ body:has(#game:not(.hidden)) .credit { display: none; }
 .opp .mini-cards { display: flex; margin-top: 10px; height: 26px; }
 .opp .mini-cards span {
   width: 18px; height: 25px; border-radius: 3px; margin-left: -10px; flex: none;
-  background: url('cards/back.svg') center / cover; box-shadow: -1px 0 2px rgba(0,0,0,.6);
+  background: url('cards/back.webp') center / cover; box-shadow: -1px 0 2px rgba(0,0,0,.6);
   outline: 1px solid rgba(211,241,112,.35); outline-offset: -1px;
 }
 .opp .mini-cards span:first-child { margin-left: 0; }
@@ -354,7 +354,7 @@ body:has(#game:not(.hidden)) .credit { display: none; }
   transition: transform .14s ease, box-shadow .14s ease, opacity .14s, filter .14s;
 }
 .card img { width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-drag: none; }
-.card.back { background: url('cards/back.svg') center / cover; }
+.card.back { background: url('cards/back.webp') center / cover; }
 
 .hand {
   display: flex; flex-direction: column; align-items: center; gap: 10px;

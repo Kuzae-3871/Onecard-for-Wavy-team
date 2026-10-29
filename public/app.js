@@ -206,13 +206,15 @@
 
   // ---------- 렌더링 ----------
   const cardFile = (c) => (c.suit ? c.rank + c.suit : c.rank);
+  const cardSrc = (c) => `cards/${cardFile(c)}.webp`;
   const cardName = (c) => (c.rank === 'BJ' ? '흑백조커' : c.rank === 'CJ' ? '컬러조커' : SUIT_SYM[c.suit] + c.rank);
 
   function cardEl(c) {
     const el = document.createElement('div');
     el.className = 'card';
     const img = document.createElement('img');
-    img.src = `cards/${cardFile(c)}.svg`;
+    img.src = cardSrc(c);
+    img.decoding = 'sync';
     img.alt = cardName(c);
     img.draggable = false;
     el.appendChild(img);
@@ -220,8 +222,14 @@
   }
 
   // 카드 이미지 미리 불러오기
-  for (const s of 'SHDC') for (const r of RANK_ORDER) new Image().src = `cards/${r}${s}.svg`;
-  for (const f of ['BJ', 'CJ', 'back']) new Image().src = `cards/${f}.svg`;
+  // 모든 카드 이미지를 미리 받아 디코딩해 둠 (참조를 유지해야 캐시에서 빠지지 않음)
+  const preloaded = [];
+  for (const f of [...[...'SHDC'].flatMap((s) => RANK_ORDER.map((r) => r + s)), 'BJ', 'CJ', 'back']) {
+    const im = new Image();
+    im.src = `cards/${f}.webp`;
+    im.decode?.().catch(() => {});
+    preloaded.push(im);
+  }
   let lastTopId = null;
 
   function sortHand(hand) {
@@ -428,11 +436,16 @@
     }
   }
 
+  // 손패 카드 요소는 다시 만들지 않고 재사용 (매번 새로 만들면 이미지가 잠깐 비어 보일 수 있음)
+  const handEls = new Map();
+
   function renderHand() {
     const g = state?.game;
     const h = $('hand');
     h.innerHTML = '';
-    if (!g || !g.hand) return;
+    if (!g || !g.hand) { handEls.clear(); return; }
+    const ids = new Set(g.hand.map((c) => c.id));
+    for (const id of handEls.keys()) if (!ids.has(id)) handEls.delete(id);
     selected = selected.filter((id) => g.hand.some((c) => c.id === id));
     const mine = isMyTurn();
     const cards = sortHand(g.hand);
@@ -449,9 +462,14 @@
       const row = document.createElement('div');
       row.className = 'hand-row';
       rowCards.forEach((c, i) => {
-        const el = cardEl(c);
-        el.dataset.id = c.id;
-        if (i > 0) el.style.marginLeft = `${step - cardW}px`;
+        let el = handEls.get(c.id);
+        if (!el) {
+          el = cardEl(c);
+          el.dataset.id = c.id;
+          handEls.set(c.id, el);
+        }
+        el.className = 'card';
+        el.style.marginLeft = i > 0 ? `${step - cardW}px` : '';
         if (mine) el.classList.add(g.playable.includes(c.id) ? 'playable' : 'dim');
         el.onclick = () => onCardTap(c);
         row.appendChild(el);
