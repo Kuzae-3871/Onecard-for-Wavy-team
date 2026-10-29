@@ -71,6 +71,17 @@ function scenario() {
   assert(g.oneCard.has('a'));
   g.callOneCard('c');
   assert.strictEqual(a.hand.length, 2);
+  // 시간 초과: 기본 1장 + 패널티 1장 = 2장, 공격 중이면 누적 + 1장
+  const cur = g.current;
+  let n0 = cur.hand.length;
+  g.timeout();
+  assert.strictEqual(cur.hand.length, n0 + 2);
+  const nxt = g.current;
+  g.pendingAttack = 3;
+  n0 = nxt.hand.length;
+  g.timeout();
+  assert.strictEqual(nxt.hand.length, n0 + 4);
+  assert.strictEqual(g.pendingAttack, 0);
   console.log('scenario ok');
 }
 scenario();
@@ -93,6 +104,7 @@ for (let n = 0; n < 3000; n++) {
     else if (ids.length && Math.random() < 0.9) err = g.play(p.pid, [ids[Math.floor(Math.random() * ids.length)]], SUITS[steps % 4]);
     else err = g.draw(p.pid);
     assert.strictEqual(err, null, err);
+    if (Math.random() < 0.03 && !g.over) g.timeout();
     if (Math.random() < 0.1) g.callOneCard(g.players[Math.floor(Math.random() * np)].pid);
     const total = g.deck.length + g.discard.length + g.players.reduce((s, x) => s + x.hand.length, 0);
     assert.strictEqual(total, 54, 'card conservation');

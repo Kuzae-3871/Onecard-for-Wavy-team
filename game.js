@@ -70,6 +70,7 @@ class Game {
     this.log = [];
     this.logSeq = 0;
     this.turnSeq = 0;
+    this.shuffleSeq = 1; // 덱을 섞을 때마다 증가 (클라이언트 셔플 연출용)
     this.over = false;
     this.ranking = null;
 
@@ -140,7 +141,8 @@ class Game {
         const top = this.discard.pop();
         this.deck = shuffle(this.discard);
         this.discard = [top];
-        this.addLog('덱이 떨어져 낸 카드들을 섞어 새 덱을 만들었습니다.');
+        this.shuffleSeq++;
+        this.addLog('🔀 덱이 떨어져 낸 카드들을 섞어 새 덱을 만들었습니다.');
       }
       p.hand.push(this.deck.pop());
       drawn++;
@@ -347,7 +349,9 @@ class Game {
   timeout() {
     if (this.over) return;
     const p = this.current;
-    this.addLog(`⏰ ${p.name} 님 시간 초과`);
+    // 시간 초과 패널티: 원래 받을 카드(1장 또는 공격 누적)에 1장 더
+    const got = this.drawCards(p, 1);
+    this.addLog(`⏰ ${p.name} 님 시간 초과! 패널티 ${got}장`);
     this.draw(p.pid);
   }
 
@@ -377,6 +381,7 @@ class Game {
       over: this.over,
       ranking: this.ranking,
       turnSeq: this.turnSeq,
+      shuffleSeq: this.shuffleSeq,
     };
   }
 }

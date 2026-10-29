@@ -29,6 +29,7 @@
   let resultDismissed = false;
   let lastTurnSeq = null;
   let lastTurnPid = null;
+  let lastShuffleSeq = null;
   let soundOn = store.get('onecard_sound') !== 'off';
 
   const socket = io();
@@ -221,6 +222,7 @@
     if (state.gamesPlayed !== lastGameNo) {
       lastGameNo = state.gamesPlayed;
       lastLogSeq = 0;
+      lastShuffleSeq = null;
       resultDismissed = false;
       selected = [];
       if (g) feed.push({ sep: true, msg: `GAME ${state.gamesPlayed}` });
@@ -285,6 +287,11 @@
 
     // 테이블
     $('deckCount').textContent = g.deckCount;
+    // 셔플 연출: 게임 시작 직후, 그리고 덱이 떨어져 다시 섞을 때
+    if (g.shuffleSeq !== lastShuffleSeq) {
+      if (lastShuffleSeq !== null || g.turnSeq <= 1) playShuffle();
+      lastShuffleSeq = g.shuffleSeq;
+    }
     const dp = $('discardPile');
     if (lastTopId !== g.top.id || !dp.firstChild) {
       lastTopId = g.top.id;
@@ -396,7 +403,7 @@
       const fresh = g.log.filter((l) => l.seq > lastLogSeq);
       for (const l of fresh) {
         feed.push({ chat: false, msg: l.msg });
-        if (/🚨|💥|🏆|☝️|🎉/.test(l.msg)) toast(l.msg);
+        if (/🚨|💥|🏆|☝️|🎉|🔀|⏰/.test(l.msg)) toast(l.msg);
       }
       if (fresh.length) lastLogSeq = fresh[fresh.length - 1].seq;
     }
@@ -446,6 +453,68 @@
         o.stop(t + 0.4);
       });
     } catch {}
+  }
+
+  function riffleSound() {
+    if (!soundOn) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx;
+      const noise = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+      const d = noise.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const t0 = ctx.currentTime + 0.02;
+      // 촤르르: 짧은 노이즈 '톡' 소리를 점점 빠르게 여러 번
+      let t = t0;
+      for (let i = 0; i < 34; i++) {
+        const src = ctx.createBufferSource();
+        src.buffer = noise;
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 2200 + Math.random() * 2200;
+        bp.Q.value = 1.4;
+        const gn = ctx.createGain();
+        const peak = 0.22 + Math.random() * 0.12;
+        gn.gain.setValueAtTime(0.0001, t);
+        gn.gain.exponentialRampToValueAtTime(peak, t + 0.003);
+        gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+        src.connect(bp).connect(gn).connect(ctx.destination);
+        src.start(t);
+        src.stop(t + 0.05);
+        t += 0.026 - i * 0.0003 + Math.random() * 0.006;
+      }
+      // 마지막에 카드를 모으는 '착' 소리
+      const end = ctx.createBufferSource();
+      end.buffer = noise;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1400;
+      const eg = ctx.createGain();
+      const te = t + 0.05;
+      eg.gain.setValueAtTime(0.0001, te);
+      eg.gain.exponentialRampToValueAtTime(0.5, te + 0.005);
+      eg.gain.exponentialRampToValueAtTime(0.0001, te + 0.08);
+      end.connect(lp).connect(eg).connect(ctx.destination);
+      end.start(te);
+      end.stop(te + 0.1);
+    } catch {}
+  }
+
+  function playShuffle() {
+    const pile = $('deckPile');
+    pile.querySelector('.shuffle-fx')?.remove();
+    const fx = document.createElement('div');
+    fx.className = 'shuffle-fx';
+    for (let i = 0; i < 8; i++) {
+      const c = document.createElement('div');
+      c.className = `card back ${i % 2 ? 'r' : 'l'}`;
+      c.style.animationDelay = `${Math.floor(i / 2) * 45}ms`;
+      fx.appendChild(c);
+    }
+    pile.appendChild(fx);
+    pile.classList.add('shuffling');
+    riffleSound();
+    setTimeout(() => { fx.remove(); pile.classList.remove('shuffling'); }, 1100);
   }
 
   function turnCue() {
