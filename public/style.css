@@ -116,6 +116,14 @@ input::placeholder { color: #5c5c5c; }
 .spec p { margin: 0; color: var(--muted); }
 .spec b { color: var(--gray-1); font-weight: 600; }
 .credit { position: relative; z-index: 1; text-align: center; font-size: 11px; color: #4a4a4a; padding: 0 16px 16px; }
+.made-by { margin: 0; text-align: center; font-size: 12px; letter-spacing: .06em; color: var(--muted); }
+.made-by b { color: var(--lime); font-weight: 700; letter-spacing: 0; }
+.hero-sign {
+  text-align: left; margin-top: 22px; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; padding: 7px 14px; border: 1px solid var(--line-2); border-radius: 999px;
+}
+.hero-sign b { font-size: 14px; }
+.bottom .made-by { margin-top: 6px; }
 body:has(#game:not(.hidden)) .credit { display: none; }
 
 /* ---------- 대기실 ---------- */
