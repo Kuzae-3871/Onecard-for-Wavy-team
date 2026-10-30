@@ -441,16 +441,27 @@
     $('gameCode').textContent = state.code;
     $('dirInfo').textContent = g.direction === 1 ? '↻ 시계방향' : '↺ 반시계방향';
 
-    // 상대 (내 다음 순서부터 좌석 순으로)
+    // 상대: 진행 방향 기준으로 내 다음 차례부터 순서대로, 번호를 붙여서
     const opp = $('opponents');
     opp.innerHTML = '';
+    const n = g.players.length;
     const myIdx = g.players.findIndex((p) => p.pid === pid);
-    const order = g.players.map((_, i) => g.players[(i + Math.max(myIdx, 0) + 1) % g.players.length]).filter((p) => p.pid !== pid);
+    const baseIdx = myIdx >= 0 ? myIdx : Math.max(0, g.players.findIndex((p) => p.pid === g.turnPid) - g.direction);
+    const order = [];
+    for (let k = 1; k <= n; k++) {
+      const p = g.players[(((baseIdx + k * g.direction) % n) + n) % n];
+      if (p.pid !== pid && !order.includes(p)) order.push(p);
+    }
+    let seq = 0;
+    const seqOf = new Map();
+    for (const p of order) if (!p.out) seqOf.set(p.pid, ++seq);
+    renderTurnOrder(g);
     for (const p of order) {
       const member = state.members.find((m) => m.pid === p.pid);
       const d = document.createElement('div');
       d.className = `opp ${p.pid === g.turnPid ? 'turn' : ''} ${p.out ? 'out' : ''} ${member && !member.connected ? 'offline' : ''}`;
       d.dataset.pid = p.pid;
+      if (seqOf.has(p.pid)) d.insertAdjacentHTML('afterbegin', `<span class="order-no">${seqOf.get(p.pid)}</span>`);
       if (member && member.isBot) d.classList.add('bot');
       const n = document.createElement('div');
       n.className = 'name';
@@ -818,7 +829,11 @@
       } else if (e.type === 'end') {
         // 1등이 아닌 채로 끝난 참가자에게 Try again
         const meP = g.players.find((x) => x.pid === pid);
-        if (meP && g.ranking && g.ranking[0] !== pid) queueFx('lose', myName, delay + 150);
+        if (meP && g.ranking && g.ranking[0] !== pid) {
+          const rank = g.ranking.indexOf(pid) + 1;
+          // 꼴등이 아니면 몇 등인지 같이 표시
+          queueFx('lose', myName, delay + 150, rank < g.ranking.length ? rank : null);
+        }
       } else if (e.type === 'draw') {
         const attack = e.kind === 'attack';
         const penalty = e.kind === 'penalty';
@@ -936,28 +951,51 @@
   const thock = () => noiseHit({ dur: 0.06, freq: 1200, type: 'lowpass', vol: 0.35 });
   const thud = (v = 1) => noiseHit({ dur: 0.1, freq: 700, type: 'lowpass', vol: 0.55 * v });
 
+  // 맨 위 순서 줄: 지금 차례인 사람부터 진행 방향대로
+  function renderTurnOrder(g) {
+    const bar = $('turnOrder');
+    bar.innerHTML = '';
+    if (g.over) return;
+    const n = g.players.length;
+    const cur = g.players.findIndex((p) => p.pid === g.turnPid);
+    const list = [];
+    for (let k = 0; k < n; k++) {
+      const p = g.players[(((cur + k * g.direction) % n) + n) % n];
+      if (!p.out) list.push(p);
+    }
+    list.forEach((p, i) => {
+      if (i > 0) bar.insertAdjacentHTML('beforeend', '<span class="to-arrow">›</span>');
+      const c = document.createElement('span');
+      c.className = `to-chip ${i === 0 ? 'now' : ''} ${p.pid === pid ? 'me' : ''}`;
+      c.textContent = p.pid === pid ? '나' : p.name.replace(/^COM\s*/, '');
+      bar.appendChild(c);
+    });
+  }
+
   // ---------- 큰 화면 연출: Winner! / You are Broke! / Try again ----------
   const FX = {
     win: { emoji: '👑', title: 'Winner!', sub: (n) => `${n} · 축하해요!`, sound: () => fanfare(), vib: [60, 40, 60, 40, 160] },
     broke: { emoji: '💀', title: 'You are Broke!', sub: () => '패가 20장을 넘어 파산했어요', sound: () => womp(), vib: [200, 80, 300] },
-    lose: { emoji: '🥲', title: 'Try again', sub: () => '다음 판엔 1등 해봐요', sound: () => sigh(), vib: [80] },
+    lose: { emoji: '🥲', title: 'Try again', sub: (n, rank) => (rank ? `${rank}등으로 마쳤어요 · 다음 판엔 1등 해봐요` : '다음 판엔 1등 해봐요'), sound: () => sigh(), vib: [80] },
   };
 
   // 연출이 겹치지 않게 차례로 보여줌 (예: 파산 → Try again)
-  function queueFx(kind, name, delay = 0) {
+  function queueFx(kind, name, delay = 0, rank = null) {
     const start = Math.max(Date.now() + delay, fxBusyUntil);
     fxBusyUntil = start + FX_LEN + 150;
-    setTimeout(() => playFx(kind, name), start - Date.now());
+    setTimeout(() => playFx(kind, name, rank), start - Date.now());
     setTimeout(render, fxBusyUntil - Date.now() + 30);
   }
 
-  function playFx(kind, name) {
+  function playFx(kind, name, rank) {
     const k = FX[kind];
     const fx = $('winnerFx');
     fx.className = `winner-fx ${kind}`;
     fx.querySelector('.fx-emoji').textContent = k.emoji;
-    fx.querySelector('.win-title').textContent = k.title;
-    fx.querySelector('.win-name').textContent = k.sub(name);
+    const title = fx.querySelector('.win-title');
+    title.textContent = k.title;
+    if (rank) title.insertAdjacentHTML('beforeend', `<span class="rank-badge">${rank}등</span>`);
+    fx.querySelector('.win-name').textContent = k.sub(name, rank);
     const conf = fx.querySelector('.confetti');
     conf.innerHTML = '';
     if (kind === 'win') {
